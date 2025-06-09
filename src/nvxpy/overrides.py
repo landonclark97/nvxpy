@@ -5,8 +5,12 @@ import autograd.numpy as np
 from autograd.extend import defvjp, primitive
 
 
-
 _dot = partial(np.einsum, "...ij,...jk->...ik")
+
+
+def _diag(a):
+    return np.eye(a.shape[-1]) * a
+
 
 def T(x):
     return np.swapaxes(x, -1, -2)
@@ -34,7 +38,9 @@ def grad_svd(usv_, a, full_matrices=True, compute_uv=True):
             return _dot(np.conj(u) * g[..., np.newaxis, :], T(v))
 
         elif full_matrices:
-            raise NotImplementedError("Gradient of svd not implemented for full_matrices=True")
+            raise NotImplementedError(
+                "Gradient of svd not implemented for full_matrices=True"
+            )
 
         else:
             u = usv[0]
@@ -45,9 +51,13 @@ def grad_svd(usv_, a, full_matrices=True, compute_uv=True):
 
             k = np.min((m, n))
             # broadcastable identity array with shape (1, 1, ..., 1, k, k)
-            i = np.reshape(np.eye(k), np.concatenate((np.ones(a.ndim - 2, dtype=int), (k, k))))
+            i = np.reshape(
+                np.eye(k), np.concatenate((np.ones(a.ndim - 2, dtype=int), (k, k)))
+            )
 
-            f = 1 / ((s[..., np.newaxis, :] ** 2 - s[..., :, np.newaxis] ** 2 + i) + 1e-8) # <---- change from original
+            f = 1 / (
+                (s[..., np.newaxis, :] ** 2 - s[..., :, np.newaxis] ** 2 + i) + 1e-8
+            )  # <---- change from original
 
             gu = g[0]
             gs = g[1]
@@ -68,7 +78,9 @@ def grad_svd(usv_, a, full_matrices=True, compute_uv=True):
                 i_minus_vvt = np.reshape(
                     np.eye(n), np.concatenate((np.ones(a.ndim - 2, dtype=int), (n, n)))
                 ) - _dot(v, np.conj(T(v)))
-                t1 = t1 + np.conj(_dot(_dot(u / s[..., np.newaxis, :], T(gv)), i_minus_vvt))
+                t1 = t1 + np.conj(
+                    _dot(_dot(u / s[..., np.newaxis, :], T(gv)), i_minus_vvt)
+                )
 
                 return t1
 
@@ -84,5 +96,6 @@ def grad_svd(usv_, a, full_matrices=True, compute_uv=True):
                 return t1
 
     return vjp
+
 
 defvjp(svd, grad_svd)

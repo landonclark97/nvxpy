@@ -6,7 +6,7 @@ def test_function_initialization():
     def dummy_func(x):
         return x * 2
 
-    func = Function(dummy_func, left=None, jac='numerical')
+    func = Function(dummy_func, left=None, jac="numerical")
     assert func.func(2) == 4
     assert callable(func.jac)
 
@@ -21,7 +21,7 @@ def test_function_call():
 
 def test_numerical_diff():
     def dummy_func(x):
-        return x ** 2
+        return x**2
 
     func = Function(dummy_func, left=None)
     numerical_diff = func._numerical_diff(None, 2)

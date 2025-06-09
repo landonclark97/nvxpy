@@ -4,13 +4,10 @@ from ..expression import Expr
 from ..overrides import svd
 
 
-
 class PolarDecomposition(Expr):
-
     def __init__(self, left):
         super().__init__("polar_decomp", left)
-    
-    
+
     def __call__(self, x):
         U, _, Vt = svd(x, full_matrices=False)
         det_UVt = np.linalg.det(U @ Vt)

@@ -5,6 +5,7 @@ from nvxpy.constraint import Constraint
 from nvxpy.set import Set
 from nvxpy.expression import Expr
 
+
 def test_variable_creation():
     var = Variable(shape=(2, 2), name="A", symmetric=True)
     assert var.name == "A"

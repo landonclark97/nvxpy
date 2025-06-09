@@ -1,4 +1,3 @@
-import pytest
 import autograd.numpy as np
 import nvxpy as nvx
 from nvxpy.sets.special_orthogonal import SO
@@ -30,7 +29,7 @@ def test_so_constraint_w_problem():
     so_n = SO(n)
     var = Variable(shape=(n, n), name="some_variable")
     var.value = np.random.uniform(-2, 2, (n, n))
-    obj = nvx.norm(var - np.eye(n), ord='fro')
+    obj = nvx.norm(var - np.eye(n), ord="fro")
     problem = Problem(Minimize(obj), [var ^ so_n])
     problem.solve()
 

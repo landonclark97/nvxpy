@@ -6,27 +6,30 @@ from .set import Set
 
 
 class Variable:
-
     __array_priority__ = 100
-    
+
     _ids = 0
 
     def __init__(
-            self,
-            shape=(1,),
-            name=None,
-            symmetric=False,
-            PSD=False,
-            NSD=False,
-            pos=False,
-            neg=False,
-            integer=False,
-        ):
+        self,
+        shape=(1,),
+        name=None,
+        symmetric=False,
+        PSD=False,
+        NSD=False,
+        pos=False,
+        neg=False,
+        integer=False,
+    ):
         assert isinstance(shape, tuple), "Shape must be a tuple"
         assert len(shape) > 0, "Shape must be non-empty"
-        assert all(isinstance(s, int) for s in shape), "Shape must be a tuple of integers"
+        assert all(isinstance(s, int) for s in shape), (
+            "Shape must be a tuple of integers"
+        )
         assert all(s > 0 for s in shape), "Shape must be a tuple of positive integers"
-        assert len(shape) == 1 or len(shape) == 2, "Shape must be a tuple of length 1 or 2"
+        assert len(shape) == 1 or len(shape) == 2, (
+            "Shape must be a tuple of length 1 or 2"
+        )
 
         self.name = name if name else f"x{Variable._ids}"
         self.shape = shape
@@ -67,46 +70,72 @@ class Variable:
         if integer:
             raise NotImplementedError("Integer variables are not supported yet")
 
-
     @property
     def value(self):
         return self._value
-
 
     @value.setter
     def value(self, val):
         self._value = np.array(val).reshape(self.shape)
 
-
     def __repr__(self):
         return f"Var({self.name}, shape={self.shape})"
-
 
     @property
     def T(self):
         return Expr("transpose", self)
 
+    def __add__(self, other):
+        return Expr("add", self, other)
 
-    def __add__(self, other): return Expr("add", self, other)
-    def __radd__(self, other): return Expr("add", other, self)
-    def __sub__(self, other): return Expr("sub", self, other)
-    def __rsub__(self, other): return Expr("sub", other, self)
-    def __mul__(self, other): return Expr("mul", self, other)
-    def __rmul__(self, other): return Expr("mul", other, self)
-    def __matmul__(self, other): return Expr("matmul", self, other)
-    def __rmatmul__(self, other): return Expr("matmul", other, self)
-    def __truediv__(self, other): return Expr("div", self, other)
-    def __pow__(self, other): return Expr("pow", self, other)
-    def __neg__(self): return Expr("neg", self)
+    def __radd__(self, other):
+        return Expr("add", other, self)
 
-    def __getitem__(self, key): return Expr("getitem", self, key)
+    def __sub__(self, other):
+        return Expr("sub", self, other)
 
-    def __ge__(self, other): return Constraint(self, ">=", other)
-    def __le__(self, other): return Constraint(self, "<=", other)
-    def __eq__(self, other): return Constraint(self, "==", other)
-    def __rshift__(self, other): return Constraint(self, ">>", other)
-    def __lshift__(self, other): return Constraint(self, "<<", other)
-    
+    def __rsub__(self, other):
+        return Expr("sub", other, self)
+
+    def __mul__(self, other):
+        return Expr("mul", self, other)
+
+    def __rmul__(self, other):
+        return Expr("mul", other, self)
+
+    def __matmul__(self, other):
+        return Expr("matmul", self, other)
+
+    def __rmatmul__(self, other):
+        return Expr("matmul", other, self)
+
+    def __truediv__(self, other):
+        return Expr("div", self, other)
+
+    def __pow__(self, other):
+        return Expr("pow", self, other)
+
+    def __neg__(self):
+        return Expr("neg", self)
+
+    def __getitem__(self, key):
+        return Expr("getitem", self, key)
+
+    def __ge__(self, other):
+        return Constraint(self, ">=", other)
+
+    def __le__(self, other):
+        return Constraint(self, "<=", other)
+
+    def __eq__(self, other):
+        return Constraint(self, "==", other)
+
+    def __rshift__(self, other):
+        return Constraint(self, ">>", other)
+
+    def __lshift__(self, other):
+        return Constraint(self, "<<", other)
+
     def __xor__(self, other):
         assert isinstance(other, Set), "Set must be a Set object"
         return other.constrain(self)

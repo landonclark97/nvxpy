@@ -1,5 +1,4 @@
 class Constraint:
-    
     def __init__(self, left, op, right):
         assert op in [">=", "<=", "==", ">>", "<<"]
         self.left = left

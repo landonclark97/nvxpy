@@ -10,7 +10,6 @@ from .constants import SLSQP
 from .parser import collect_vars, eval_expression
 
 
-
 @dataclass(frozen=True)
 class SolverStats:
     solver_name: str
@@ -19,27 +18,21 @@ class SolverStats:
     num_iters: Optional[int] = None
 
 
-
 class Minimize:
-
     def __init__(self, expr):
         self.expr = expr
 
 
-
 class Maximize:
-
     def __init__(self, expr):
         self.expr = -expr
-        
 
 
 class Problem:
-
     def __init__(self, objective, constraints=[]):
         self.objective = objective
         self.constraints = constraints
-        
+
         self.vars = []
         self.var_shapes = {}
         self.var_slices = {}
@@ -50,7 +43,7 @@ class Problem:
         for c in constraints:
             collect_vars(c.left, all_vars)
             collect_vars(c.right, all_vars)
-        
+
         variable_constraints = []
         for v in all_vars:
             variable_constraints.extend(v.constraints)
@@ -66,7 +59,6 @@ class Problem:
 
         self.status = None
         self.solver_stats = None
-
 
     def solve(self, solver=SLSQP, solver_options=None, pre_solve=False):
         start_setup_time = time.time()
@@ -100,6 +92,7 @@ class Problem:
 
         cons = []
         for c in self.constraints:
+
             def make_con_fun(c):
                 def con_fun(x):
                     var_dict = unpack(x)
@@ -114,18 +107,19 @@ class Problem:
 
             ctype = "eq" if c.op == "==" else "ineq"
             con_fun, con_jac = make_con_fun(c)
-            cons.append({'type': ctype, 'fun': con_fun, 'jac': con_jac})
+            cons.append({"type": ctype, "fun": con_fun, "jac": con_jac})
 
         setup_time = time.time() - start_setup_time
 
         solve_time = 0.0
         if pre_solve:
+
             def dummy_func(_):
                 return 0.0
-            
+
             def dummy_jac(x):
                 return np.zeros_like(x)
-            
+
             start_time = time.time()
             results_constraints = minimize(
                 dummy_func,
@@ -133,25 +127,25 @@ class Problem:
                 jac=dummy_jac,
                 constraints=cons,
                 method=solver,
-                options=solver_options
+                options=solver_options,
             )
             x0 = results_constraints.x
             solve_time += time.time() - start_time
 
         start_time = time.time()
         result = minimize(
-            obj_func, 
+            obj_func,
             x0,
             jac=jac_func,
             constraints=cons,
             method=solver,
-            options=solver_options
+            options=solver_options,
         )
         solve_time += time.time() - start_time
 
         self.status = result.status
         self.solver_stats = SolverStats(
-            solver_name=solver, 
+            solver_name=solver,
             solve_time=solve_time,
             setup_time=setup_time,
             num_iters=result.nit,

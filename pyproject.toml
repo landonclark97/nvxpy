@@ -21,6 +21,7 @@ packages = [{include = "nvxpy", from = "src"}]
 pytest = "^8.4.0"
 pytest-cov = "^6.1.1"
 ruff = "^0.11.13"
+pre-commit = "^4.2.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
