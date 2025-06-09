@@ -74,3 +74,18 @@ def test_non_convex_constraints():
     problem.solve()
     assert x.value[0] ** 2 + x.value[1] ** 2 >= 1
     assert np.allclose(x.value, x_d, atol=1e-4)
+
+
+def test_maximize_and_presolve():
+    X = Variable((4,4))
+    X.value = np.arange(16).reshape(4,4)
+
+    obj = nvx.norm(X - np.eye(4), ord="fro")
+    cons = [
+        nvx.norm(X, ord="fro") <= 3,
+        X >> 0,
+    ]
+    problem = Problem(nvx.Maximize(obj), cons)
+    problem.solve(presolve=True)
+
+    assert problem.status == 0

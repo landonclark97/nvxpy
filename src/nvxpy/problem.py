@@ -60,7 +60,7 @@ class Problem:
         self.status = None
         self.solver_stats = None
 
-    def solve(self, solver=SLSQP, solver_options=None, pre_solve=False):
+    def solve(self, solver=SLSQP, solver_options=None, presolve=False):
         start_setup_time = time.time()
 
         x0 = np.ones(self.total_size)
@@ -112,7 +112,7 @@ class Problem:
         setup_time = time.time() - start_setup_time
 
         solve_time = 0.0
-        if pre_solve:
+        if presolve:
 
             def dummy_func(_):
                 return 0.0
