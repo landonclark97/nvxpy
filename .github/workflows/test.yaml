@@ -1,4 +1,4 @@
-name: Run Pytests and Generate Coverage Report
+name: Tests
 
 on:
   push:
