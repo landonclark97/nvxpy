@@ -1,4 +1,5 @@
 import pytest
+import autograd.numpy as np
 from nvxpy.variable import Variable
 from nvxpy.problem import Problem, Minimize
 from nvxpy.constraint import Constraint
@@ -54,3 +55,74 @@ def test_expression():
     assert expr.op == "add"
     assert expr.left == var1
     assert expr.right == var2
+
+
+def test_variable_functions():
+    X = Variable(shape=(2,2), name="x")
+    Y = Variable(shape=(2,2), name="y")
+
+    Z = np.zeros((2,2))
+
+    dummy_set = Set("dummy")
+    dummy_set.constrain = lambda x: Constraint(x, ">=", 0)
+
+    assert isinstance(X.T, Expr)
+    assert isinstance(Z + X, Expr)
+    assert isinstance(X + Y, Expr)
+    assert isinstance(X - Y, Expr)
+    assert isinstance(Z - X, Expr)
+    assert isinstance(X * Y, Expr)
+    assert isinstance(Z * X, Expr)
+    assert isinstance(X / Y, Expr)
+    assert isinstance(Z @ X, Expr)
+    assert isinstance(X @ Z, Expr)
+    assert isinstance(X**2, Expr)
+    assert isinstance(X**Y, Expr)
+    assert isinstance(-X, Expr)
+    assert isinstance(X[0], Expr)
+    assert isinstance(X >= Y, Constraint)
+    assert isinstance(X <= Y, Constraint)
+    assert isinstance(X == Y, Constraint)
+    assert isinstance(X >> Y, Constraint)
+    assert isinstance(X << Y, Constraint)
+    assert isinstance(X ^ dummy_set, Constraint)
+
+    assert X.value is None
+    X.value = Z
+    assert np.allclose(X.value, Z)
+
+    Y.value = Z
+    assert np.allclose(X.value + Y.value, Z)
+
+
+def test_expression_functions():
+    A = Variable(shape=(2,2), name="x")
+    Y = Variable(shape=(2,2), name="y")
+
+    X = A + Y
+
+    Z = np.zeros((2,2))
+
+    dummy_set = Set("dummy")
+    dummy_set.constrain = lambda x: Constraint(x, ">=", 0)
+
+    assert isinstance(X.T, Expr)
+    assert isinstance(Z + X, Expr)
+    assert isinstance(X + Y, Expr)
+    assert isinstance(X - Y, Expr)
+    assert isinstance(Z - X, Expr)
+    assert isinstance(X * Y, Expr)
+    assert isinstance(Z * X, Expr)
+    assert isinstance(X / Y, Expr)
+    assert isinstance(Z @ X, Expr)
+    assert isinstance(X @ Z, Expr)
+    assert isinstance(X**2, Expr)
+    assert isinstance(X**Y, Expr)
+    assert isinstance(-X, Expr)
+    assert isinstance(X[0], Expr)
+    assert isinstance(X >= Y, Constraint)
+    assert isinstance(X <= Y, Constraint)
+    assert isinstance(X == Y, Constraint)
+    assert isinstance(X >> Y, Constraint)
+    assert isinstance(X << Y, Constraint)
+    assert isinstance(X ^ dummy_set, Constraint)

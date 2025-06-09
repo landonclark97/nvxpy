@@ -30,9 +30,9 @@ def test_non_convex_obj():
     def cos_sin_obj(x):
         return np.sin(x[0]) + np.cos(x[1])
 
-    obj_func = nvx.Function(cos_sin_obj, x, jac="autograd")
+    obj_func = nvx.Function(cos_sin_obj, jac="autograd")
 
-    objective = Minimize(obj_func)
+    objective = Minimize(obj_func(x))
 
     # Define constraints: x1^2 + x2^2 <= 1
     constraints = [x[0] ** 2 + x[1] ** 2 <= 1]

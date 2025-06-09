@@ -53,7 +53,7 @@ The above code will likely get stuck in a local optimum. To reach the globally o
 x.value = np.array([-5.0, 1.0, 1.0])
 prob.solve(solver=nvx.SLSQP)
 
-print(f'globally optimal value for x: {x.value}')
+print(f'globally optimal value of x: {x.value}')
 ```
 
 
@@ -65,7 +65,7 @@ NVXPY is in early development. The most pressing issues are as follows:
 * Only supports SciPy-based solvers. Ideally most other NLP solvers should be easy to add, such as IPOPT, which uses a similar API to the `minimize` function from SciPy.
 * No plans to support integer programming any time soon. One potential solution is to make a SLP-inspired solver based on the MILP solver from SciPy to enforce integrality constraints. However, any custom solver would probably be out of the scope of this project.
 * Small amount of atomic operations and sets.
-* Unknown unknowns...
+* Unknown and untested edge cases.
 
 
 ## Development

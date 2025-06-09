@@ -2,11 +2,15 @@ from typing import Callable
 
 from .expression import Expr
 from .variable import Variable
+from .constructs.function import Function
 
 
 def collect_vars(expr, vars):
     if isinstance(expr, Variable):
         vars.append(expr)
+    elif isinstance(expr, Function):
+        for arg in expr.args:
+            collect_vars(arg, vars)
     elif isinstance(expr, Expr):
         collect_vars(expr.left, vars)
         if expr.right is not None:
@@ -19,6 +23,12 @@ def eval_expression(expr, var_dict, use_value=False):
             return expr.value
         else:
             return var_dict[expr.name]
+
+    elif isinstance(expr, Function):
+        args = []
+        for arg in expr.args:
+            args.append(eval_expression(arg, var_dict, use_value))
+        return expr.func(*args)
 
     elif isinstance(expr, Expr):
         left_eval = eval_expression(expr.left, var_dict, use_value)
