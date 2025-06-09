@@ -1,6 +1,6 @@
 # NVXPY
 
-![Build](https://github.com/landonclark97/nvxpy/actions/workflows/test.yml/badge.svg)
+[![Build Status](https://github.com/landonclark97/nvxpy/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/landonclark97/nvxpy/actions/workflows/test.yaml)
 [![codecov](https://codecov.io/gh/landonclark97/nvxpy/branch/main/graph/badge.svg)](https://codecov.io/gh/landonclark97/nvxpy)
 
 ## Overview
