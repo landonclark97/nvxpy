@@ -1,6 +1,7 @@
 import autograd.numpy as np
 import nvxpy as nvx
 from nvxpy.sets.special_orthogonal import SO
+from nvxpy.sets.perspective_cone import PerspectiveCone
 from nvxpy.constraint import Constraint
 from nvxpy.atoms.polar import PolarDecomposition
 from nvxpy.problem import Problem, Minimize
@@ -34,3 +35,30 @@ def test_so_constraint_w_problem():
     problem.solve()
 
     assert np.allclose(var.value.T @ var.value, np.eye(n))
+
+
+def test_perspective_cone_initialization():
+    func = nvx.norm
+    expr = Variable(shape=(3,))
+    expr.value = np.array([1, 2, 3])
+    p = Variable()
+    p.value = 1.0
+    pc = PerspectiveCone(func, expr, p)
+    assert pc.func == func
+    assert np.array_equal(pc.expr, expr)
+    assert pc.p == p
+
+
+def test_perspective_cone_constrain():
+    func = nvx.norm
+    expr = Variable(shape=(3,))
+    expr.value = np.array([1, 2, 3])
+    p = Variable()
+    p.value = 1.0
+    pc = PerspectiveCone(func, expr, p)
+    var = Variable(shape=(3,), name="some_variable")
+    constraint = pc.constrain(var)
+    assert isinstance(constraint, Constraint)
+    expected_expr = p * func(expr / (p + 1e-8))
+    assert constraint.op == "=="
+    assert constraint.right == expected_expr

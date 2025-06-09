@@ -39,7 +39,7 @@ x.value = np.array([-5.0, 0.0, 0.0]) # NLPs require a seed.
 x_d = np.array([5.0, 0.0, 0.0])
 
 obj = nvx.norm(x - x_d)
-constraints = [nvx.norm(x) >= 1.0]
+constraints = [nvx.norm(x) >= 1.0] # Non-convex!
 
 prob = nvx.Problem(nvx.Minimize(obj), constraints)
 prob.solve(solver=nvx.SLSQP)

@@ -48,3 +48,51 @@ def test_eval_expression():
     expr = Expr(left=x, right=y, op="pow")
     assert eval_expression(expr, var_dict) == 100
     assert eval_expression(expr, var_dict, use_value=True) == 125
+
+
+def test_collect_vars_with_list():
+    # Test with a list of variables
+    x = Variable(name="x")
+    y = Variable(name="y")
+    z = Variable(name="z")
+    vars = []
+    collect_vars([x, y, z], vars)
+    assert vars == [x, y, z]
+
+
+def test_collect_vars_with_dict():
+    # Test with a dictionary of variables
+    x = Variable(name="x")
+    y = Variable(name="y")
+    z = Variable(name="z")
+    vars = []
+    collect_vars({"x": x, "y": y, "z": z}, vars)
+    assert vars == [x, y, z]
+
+
+def test_eval_expression_with_list():
+    # Test evaluation with a list of variables
+    x = Variable(name="x")
+    y = Variable(name="y")
+    z = Variable(name="z")
+    x.value = 5
+    y.value = 3
+    z.value = 2
+    var_dict = {"x": 10, "y": 2, "z": 1}
+    expr_list = [x, y, z]
+    assert eval_expression(expr_list, var_dict) == [10, 2, 1]
+    assert eval_expression(expr_list, var_dict, use_value=True) == [5, 3, 2]
+
+
+def test_eval_expression_with_dict():
+    # Test evaluation with a dictionary of variables
+    x = Variable(name="x")
+    y = Variable(name="y")
+    z = Variable(name="z")
+    x.value = 5
+    y.value = 3
+    z.value = 2
+    var_dict = {"x": 10, "y": 2, "z": 1}
+    expr_dict = {"x": x, "y": y, "z": z}
+    assert eval_expression(expr_dict, var_dict) == {"x": 10, "y": 2, "z": 1}
+    assert eval_expression(expr_dict, var_dict, use_value=True) == {"x": 5, "y": 3, "z": 2}
