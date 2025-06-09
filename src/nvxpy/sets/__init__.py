@@ -1,3 +1,4 @@
-__all__ = ["SO"]
+__all__ = ["SO", "PerspectiveCone"]
 
 from .special_orthogonal import SO
+from .perspective_cone import PerspectiveCone

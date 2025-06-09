@@ -5,6 +5,7 @@ from autograd.extend import defvjp
 from scipy.optimize import approx_fprime
 
 from ..expression import Expr
+from ..variable import Variable
 
 
 class Function(Expr):
@@ -25,10 +26,12 @@ class Function(Expr):
         super().__init__("func", self)
 
 
-    def __call__(self, *args, jac="numerical"):
+    def __call__(self, *args, **kwargs):
         self.args = args
+        self.kwargs = kwargs
+        for arg in kwargs.values():
+            assert not isinstance(arg, Variable) and not isinstance(arg, Expr), "Decision variables cannot be passed as keyword arguments"
         defvjp(self.func, *self.jac(self.func, *args))
-
         return self
 
 
@@ -38,12 +41,12 @@ class Function(Expr):
                 def f_i(xi):
                     x_copy = list(xs)
                     x_copy[i] = xi
-                    return func(*x_copy)
+                    return func(*x_copy, **self.kwargs)
                 return approx_fprime(xs[i], f_i, epsilon=1e-8) * g
             return grad_i
         return [partial_grad(i) for i in range(len(xs))]
 
 
     def _autograd_diff(self, func, *xs):
-        return [lambda g, i=i: jacobian(lambda *a: func(*a))( *xs )[i] * g
+        return [lambda g, i=i: jacobian(lambda *a: func(*a, **self.kwargs))( *xs )[i] * g
                 for i in range(len(xs))]

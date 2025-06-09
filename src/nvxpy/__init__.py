@@ -20,6 +20,8 @@ __all__ = [
     "trace",
     "maximum",
     "Function",
+    "SO",
+    "PerspectiveCone",
 ]
 
 from .variable import Variable
@@ -40,3 +42,4 @@ from .constants import (
 
 from .atoms import det, norm, sum, trace, maximum
 from .constructs import Function
+from .sets import SO, PerspectiveCone
