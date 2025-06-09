@@ -1,4 +1,3 @@
-import pytest
 import autograd.numpy as np
 from nvxpy.atoms.sum import sum
 from nvxpy.atoms.maximum import maximum
