@@ -54,7 +54,7 @@ prob.solve(solver=nvx.SLSQP)
 print(f'optimized value of x: {x.value}')
 ```
 
-The above code will likely get stuck in a local optimum. To reach the globally optimal solution, we can adjust the seed and re-solve as follows:
+The above code will likely get stuck at a locally optimal solution. To reach the globally optimal solution, we can adjust the seed and re-solve as follows:
 
 ```python
 x.value = np.array([-5.0, 1.0, 1.0])
