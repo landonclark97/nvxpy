@@ -65,6 +65,8 @@ def eval_expression(expr, var_dict, use_value=False):
             return left_eval[right_eval]
         elif expr.op == "transpose":
             return left_eval.T
+        elif expr.op == "flatten":
+            return left_eval.flatten()
         elif isinstance(expr, Callable):
             return expr(left_eval) if right_eval is None else expr(left_eval, right_eval)
         else:
@@ -76,6 +78,36 @@ def eval_expression(expr, var_dict, use_value=False):
     elif isinstance(expr, Iterable) and not isinstance(expr, np.ndarray):
         container = type(expr)
         return container([eval_expression(e, var_dict, use_value) for e in expr])
+
+    else:
+        return expr
+
+
+def replace_expr(expr, old_expr, new_expr):
+    if isinstance(expr, Variable):
+        if str(expr) == str(old_expr):
+            return new_expr
+        else:
+            return expr
+
+    elif isinstance(expr, Function):
+        expr.args = [replace_expr(arg, old_expr, new_expr) for arg in expr.args]
+        return expr
+
+    elif isinstance(expr, Expr):
+        if str(expr) == str(old_expr):
+            return new_expr
+        else:
+            expr.left = replace_expr(expr.left, old_expr, new_expr)
+            expr.right = replace_expr(expr.right, old_expr, new_expr)
+            return expr
+
+    elif isinstance(expr, dict):
+        return {k: replace_expr(v, old_expr, new_expr) for k, v in expr.items()}
+    
+    elif isinstance(expr, Iterable) and not isinstance(expr, np.ndarray):
+        container = type(expr)
+        return container([replace_expr(e, old_expr, new_expr) for e in expr])
 
     else:
         return expr

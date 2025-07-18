@@ -19,10 +19,10 @@ def test_so_constrain():
     n = 3
     so = SO(n)
     var = Variable(shape=(n, n), name="some_variable")
-    constraint = so.constrain(var)
-    assert isinstance(constraint, Constraint)
-    assert constraint.op == "=="
-    assert constraint.right == PolarDecomposition(var)
+    constraints = so.constrain(var)
+    assert constraints.op == "<="
+    assert constraints.left == nvx.norm(var - PolarDecomposition(var), ord="fro")
+    assert constraints.right == 1e-8
 
 
 def test_so_constraint_w_problem():
@@ -34,7 +34,8 @@ def test_so_constraint_w_problem():
     problem = Problem(Minimize(obj), [var ^ so_n])
     problem.solve()
 
-    assert np.allclose(var.value.T @ var.value, np.eye(n))
+    assert np.allclose(var.value.T @ var.value, np.eye(n), atol=1e-5)
+    assert np.isclose(np.linalg.det(var.value), 1)
 
 
 def test_perspective_cone_initialization():

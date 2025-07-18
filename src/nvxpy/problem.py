@@ -1,12 +1,13 @@
 from typing import Optional
 from dataclasses import dataclass
 import time
+import warnings
 
 import autograd.numpy as np
 from autograd import grad, jacobian
 from scipy.optimize import minimize
 
-from .constants import SLSQP
+from .constants import Solver
 from .parser import collect_vars, eval_expression
 
 
@@ -40,7 +41,7 @@ class Problem:
 
         all_vars = []
         collect_vars(objective.expr, all_vars)
-        for c in constraints:
+        for c in self.constraints:
             collect_vars(c.left, all_vars)
             collect_vars(c.right, all_vars)
 
@@ -60,7 +61,7 @@ class Problem:
         self.status = None
         self.solver_stats = None
 
-    def solve(self, solver=SLSQP, solver_options=None, presolve=False):
+    def solve(self, solver=Solver.SLSQP, solver_options={}, presolve=False):
         start_setup_time = time.time()
 
         x0 = np.ones(self.total_size)
@@ -90,6 +91,15 @@ class Problem:
 
         jac_func = grad(obj_func)
 
+        def dummy_func(_):
+            return 0.0
+
+        def dummy_jac(x):
+            return np.zeros_like(x)
+        
+        p_tol = solver_options.pop("p_tol", 1e-6)
+        uses_projection = any(c.op == "<-" for c in self.constraints)
+
         cons = []
         for c in self.constraints:
 
@@ -98,7 +108,10 @@ class Problem:
                     var_dict = unpack(x)
                     lval = eval_expression(c.left, var_dict)
                     rval = eval_expression(c.right, var_dict)
-                    res = lval - rval if c.op in [">=", "==", ">>"] else rval - lval
+                    if c.op == "<-":
+                        res = p_tol - np.linalg.norm(np.atleast_2d(lval - rval), ord="fro")
+                    else:
+                        res = lval - rval if c.op in [">=", "==", ">>"] else rval - lval
                     if c.op in [">>", "<<"]:
                         return np.real(np.ravel(np.linalg.eig(res)[0]))
                     return np.ravel(res)
@@ -106,19 +119,13 @@ class Problem:
                 return con_fun, jacobian(con_fun)
 
             ctype = "eq" if c.op == "==" else "ineq"
-            con_fun, con_jac = make_con_fun(c)
+            con_fun, con_jac = make_con_fun(c)                
             cons.append({"type": ctype, "fun": con_fun, "jac": con_jac})
 
         setup_time = time.time() - start_setup_time
 
         solve_time = 0.0
         if presolve:
-
-            def dummy_func(_):
-                return 0.0
-
-            def dummy_jac(x):
-                return np.zeros_like(x)
 
             start_time = time.time()
             results_constraints = minimize(
@@ -142,6 +149,45 @@ class Problem:
             options=solver_options,
         )
         solve_time += time.time() - start_time
+        x0 = result.x
+
+        if uses_projection:
+
+            start_setup_time = time.time()
+            cons = []
+            for c in self.constraints:
+                def make_con_fun(c):
+                    def con_fun(x):
+                        var_dict = unpack(x)
+                        lval = eval_expression(c.left, var_dict)
+                        rval = eval_expression(c.right, var_dict)
+                        res = lval - rval if c.op in [">=", "==", ">>", "<-"] else rval - lval
+                        if c.op in [">>", "<<"]:
+                            return np.real(np.ravel(np.linalg.eig(res)[0]))
+                        return np.ravel(res)
+
+                    return con_fun, jacobian(con_fun)
+
+                ctype = "eq" if c.op in ["==", "<-"] else "ineq"
+                con_fun, con_jac = make_con_fun(c)                
+                cons.append({"type": ctype, "fun": con_fun, "jac": con_jac})
+            
+            setup_time += time.time() - start_setup_time
+
+            start_time = time.time()
+            result_proj = minimize(
+                dummy_func,
+                x0,
+                jac=dummy_jac,
+                constraints=cons,
+                method=solver,
+                options=solver_options | {"maxiter": solver_options.get("p_maxiter", 100)},
+            )
+            solve_time += time.time() - start_time
+            if result_proj.success:
+                x0 = result_proj.x
+            else:
+                warnings.warn(f'Projection step failed with status {result_proj.status}')
 
         self.status = result.status
         self.solver_stats = SolverStats(
@@ -151,7 +197,7 @@ class Problem:
             num_iters=result.nit,
         )
 
-        sol_vars = unpack(result.x)
+        sol_vars = unpack(x0)
 
         for v in self.vars:
             v.value = sol_vars[v.name]

@@ -4,11 +4,11 @@ from autograd import jacobian
 from autograd.extend import defvjp
 from scipy.optimize import approx_fprime
 
-from ..expression import Expr
-from ..variable import Variable
+from ..expression import BaseExpr, expr_to_str
+from ..constants import Curvature as C
 
 
-class Function(Expr):
+class Function(BaseExpr):
     def __init__(self, func: Callable, jac="numerical"):
         self.op = "func"
         self.func = func
@@ -23,14 +23,12 @@ class Function(Expr):
         else:
             raise ValueError(f"Invalid jacobian: {jac}")
 
-        super().__init__("func", self)
-
 
     def __call__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
         for arg in kwargs.values():
-            assert not isinstance(arg, Variable) and not isinstance(arg, Expr), "Decision variables cannot be passed as keyword arguments"
+            assert not isinstance(arg, BaseExpr), "Decision variables cannot be passed as keyword arguments"
         defvjp(self.func, *self.jac(self.func, *args))
         return self
 
@@ -50,3 +48,17 @@ class Function(Expr):
     def _autograd_diff(self, func, *xs):
         return [lambda g, i=i: jacobian(lambda *a: func(*a, **self.kwargs))( *xs )[i] * g
                 for i in range(len(xs))]
+    
+    def __repr__(self):
+        args_str = []
+        for arg in self.args:
+            arg_str = expr_to_str(arg)
+            args_str.append(arg_str)
+        return f"{self.op}({', '.join(args_str)})"
+    
+    def __hash__(self):
+        return hash(str(self))
+
+    @property
+    def curvature(self):
+        return C.UNKNOWN

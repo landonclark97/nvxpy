@@ -1,6 +1,7 @@
 import autograd.numpy as np
 
-from ..expression import Expr
+from ..expression import Expr, BaseExpr
+from ..constants import Curvature as C
 
 
 class trace(Expr):
@@ -10,3 +11,10 @@ class trace(Expr):
 
     def __call__(self, x):
         return np.trace(x, offset=self.offset)
+    
+    @property
+    def curvature(self):
+        arg = self.left
+        arg_curv = arg.curvature if isinstance(arg, BaseExpr) else C.CONSTANT
+
+        return arg_curv

@@ -10,6 +10,13 @@ NVXPY is a Python-based Domain Specific Language (DSL) designed for formulating 
 NVXPY is not a solver, it uses the solvers exposed by the `minimize` method in SciPy.
 
 
+## Features
+
+* Simple, concise, and generic interface
+* Mediocre efficiency for expression tree evaluations (estimated at 60% - 99% native NumPy)
+* Handles gradients seemlessly, even for custom and non-Autograd functions
+
+
 ## Installation
 
 NVXPY can be installed from PyPi using:
@@ -61,7 +68,6 @@ print(f'globally optimal value of x: {x.value}')
 
 NVXPY is in early development. The most pressing issues are as follows:
 
-* Slow evaluation of objective functions. Currently the objective function is always evaluated by parsing an expression tree. However, in an ideal world this expression tree would be "compiled" before solving.
 * Only supports SciPy-based solvers. Ideally most other NLP solvers should be easy to add, such as IPOPT, which provides a similar API to the `minimize` function from SciPy.
 * No plans to support integer programming any time soon. One potential solution is to make a SLP-inspired solver based on the MILP solver from SciPy to enforce integrality constraints. However, any custom solver would probably be out of the scope of this project.
 * Small amount of atomic operations and sets.

@@ -1,14 +1,15 @@
 import autograd.numpy as np
 
-from .expression import Expr
+from .expression import BaseExpr
 from .constraint import Constraint
-from .set import Set
+from .constants import Curvature as C
 
 
-class Variable:
+class Variable(BaseExpr):
     __array_priority__ = 100
 
     _ids = 0
+    _used_names = set()
 
     def __init__(
         self,
@@ -31,7 +32,11 @@ class Variable:
             "Shape must be a tuple of length 1 or 2"
         )
 
+        if name is not None:
+            if name in Variable._used_names:
+                raise ValueError(f"Variable name {name} already in use")
         self.name = name if name else f"x{Variable._ids}"
+        Variable._used_names.add(self.name)
         self.shape = shape
         self.size = int(np.prod(shape)) if shape else 1
         self._value = None
@@ -80,62 +85,10 @@ class Variable:
 
     def __repr__(self):
         return f"Var({self.name}, shape={self.shape})"
-
+    
+    def __hash__(self):
+        return hash(str(self))
+    
     @property
-    def T(self):
-        return Expr("transpose", self)
-
-    def __add__(self, other):
-        return Expr("add", self, other)
-
-    def __radd__(self, other):
-        return Expr("add", other, self)
-
-    def __sub__(self, other):
-        return Expr("sub", self, other)
-
-    def __rsub__(self, other):
-        return Expr("sub", other, self)
-
-    def __mul__(self, other):
-        return Expr("mul", self, other)
-
-    def __rmul__(self, other):
-        return Expr("mul", other, self)
-
-    def __matmul__(self, other):
-        return Expr("matmul", self, other)
-
-    def __rmatmul__(self, other):
-        return Expr("matmul", other, self)
-
-    def __truediv__(self, other):
-        return Expr("div", self, other)
-
-    def __pow__(self, other):
-        return Expr("pow", self, other)
-
-    def __neg__(self):
-        return Expr("neg", self)
-
-    def __getitem__(self, key):
-        return Expr("getitem", self, key)
-
-    def __ge__(self, other):
-        return Constraint(self, ">=", other)
-
-    def __le__(self, other):
-        return Constraint(self, "<=", other)
-
-    def __eq__(self, other):
-        return Constraint(self, "==", other)
-
-    def __rshift__(self, other):
-        return Constraint(self, ">>", other)
-
-    def __lshift__(self, other):
-        return Constraint(self, "<<", other)
-
-    def __xor__(self, other):
-        assert isinstance(other, Set), "Set must be a Set object"
-        return other.constrain(self)
+    def curvature(self):
+        return C.AFFINE

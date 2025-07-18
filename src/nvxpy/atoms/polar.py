@@ -2,6 +2,7 @@ import autograd.numpy as np
 
 from ..expression import Expr
 from ..overrides import svd
+from ..constants import Curvature as C
 
 
 class PolarDecomposition(Expr):
@@ -14,3 +15,7 @@ class PolarDecomposition(Expr):
         S = np.ones((x.shape[0],))
         S[-1] = np.sign(det_UVt)
         return U @ np.diag(S) @ Vt
+
+    @property
+    def curvature(self):
+        return C.UNKNOWN
