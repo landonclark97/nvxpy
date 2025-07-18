@@ -20,7 +20,7 @@ def test_so_constrain():
     so = SO(n)
     var = Variable(shape=(n, n), name="some_variable")
     constraints = so.constrain(var)
-    assert constraints.op == "<="
+    assert constraints.op == "<-"
     assert constraints.left == nvx.norm(var - PolarDecomposition(var), ord="fro")
     assert constraints.right == 1e-8
 
