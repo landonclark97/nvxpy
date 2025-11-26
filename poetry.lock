@@ -221,9 +221,10 @@ tests = ["pytest", "pytest-cov", "pytest-xdist"]
 name = "cyipopt"
 version = "1.6.1"
 description = "A Cython wrapper to the IPOPT optimization package"
-optional = false
+optional = true
 python-versions = "*"
-groups = ["main", "dev"]
+groups = ["main"]
+markers = "extra == \"ipopt\" or extra == \"all\""
 files = [
     {file = "cyipopt-1.6.1.tar.gz", hash = "sha256:ae7e2d0a430687d8e89cd4e61cab9920c8941a167ed8bb442dde902570035c3f"},
 ]
@@ -1042,4 +1043,4 @@ ipopt = ["cyipopt"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11"
-content-hash = "70f69ad075d3ccd045159ebb74c5af0af3f513aa44c4cdeb65754fcf5d52ce46"
+content-hash = "9ce8efcd66525ce9d0e55fddf1a890786e369e6e9d1ce26b9063f46e5714da84"
