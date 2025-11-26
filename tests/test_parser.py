@@ -1,7 +1,6 @@
-from nvxpy.parser import collect_vars, eval_expression, replace_expr
+from nvxpy.parser import collect_vars, eval_expression
 from nvxpy.expression import Expr
 from nvxpy.variable import Variable
-from nvxpy.constructs.function import Function
 
 
 def test_collect_vars():
@@ -99,51 +98,3 @@ def test_eval_expression_with_dict():
     assert eval_expression(expr_dict, var_dict, use_value=True) == {"x": 5, "y": 3, "z": 2}
 
 
-def test_replace_expr():
-    # Test replacing a single variable
-    x = Variable(name="x")
-    y = Variable(name="y")
-    assert replace_expr(x, x, y) == y
-
-    # Test replacing in a simple expression
-    expr = Expr(left=x, right=y, op="add")
-    replaced = replace_expr(expr, x, y)
-    assert replaced.left == y
-    assert replaced.right == y
-
-    # Test replacing in a nested expression
-    z = Variable(name="z")
-    nested_expr = Expr(left=expr, right=z, op="mul")
-    replaced = replace_expr(nested_expr, y, z)
-    assert replaced.left.left == x
-    assert replaced.left.right == z
-    assert replaced.right == z
-
-    # Test replacing with a constant
-    const_replaced = replace_expr(expr, y, 5)
-    assert const_replaced.left == x
-    assert const_replaced.right == 5
-
-    # Test replacing in a list
-    expr_list = [x, y, z]
-    replaced_list = replace_expr(expr_list, y, z)
-    assert replaced_list == [x, z, z]
-
-    # Test replacing in a dictionary
-    expr_dict = {"x": x, "y": y, "z": z}
-    replaced_dict = replace_expr(expr_dict, y, z)
-    assert replaced_dict == {"x": x, "y": z, "z": z}
-
-    # Test replacing in a Function
-    def test_func(in_x):
-        return in_x
-    func = Function(test_func)
-    func.args = [x, y]
-    replaced_func = replace_expr(func, y, z)
-    assert replaced_func.args == [x, z]
-
-    # Test no replacement when old_expr not found
-    w = Variable(name="w")
-    no_change = replace_expr(expr, w, z)
-    assert no_change.left == x
-    assert no_change.right == y

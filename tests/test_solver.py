@@ -88,4 +88,49 @@ def test_maximize_and_presolve():
     problem = Problem(nvx.Maximize(obj), cons)
     problem.solve(presolve=True)
 
-    assert problem.status == 0
+    assert problem.status == nvx.SolverStatus.OPTIMAL
+
+
+def test_ipopt_solver():
+    """Test IPOPT solver via cyipopt."""
+    pytest = __import__("pytest")
+
+    try:
+        import cyipopt  # noqa: F401
+    except ImportError:
+        pytest.skip("cyipopt not installed")
+
+    x = Variable(shape=(2,), name="x")
+    x.value = np.array([0.0, 0.0])
+
+    # Minimize (x1 - 1)^2 + (x2 - 2)^2 subject to x1 + x2 >= 1
+    objective = Minimize((x[0] - 1) ** 2 + (x[1] - 2) ** 2)
+    constraints = [x[0] + x[1] >= 1, x[0] >= 0, x[1] >= 0]
+
+    problem = Problem(objective, constraints)
+    result = problem.solve(solver=nvx.IPOPT)
+
+    assert result.status == nvx.SolverStatus.OPTIMAL
+    assert np.allclose(x.value, np.array([1.0, 2.0]), atol=1e-3)
+
+
+def test_ipopt_unconstrained():
+    """Test IPOPT solver on unconstrained problem."""
+    pytest = __import__("pytest")
+
+    try:
+        import cyipopt  # noqa: F401
+    except ImportError:
+        pytest.skip("cyipopt not installed")
+
+    x = Variable(shape=(2,), name="x")
+    x.value = np.array([5.0, 5.0])
+
+    # Simple unconstrained quadratic
+    objective = Minimize((x[0] - 3) ** 2 + (x[1] + 1) ** 2)
+
+    problem = Problem(objective, [])
+    result = problem.solve(solver=nvx.IPOPT)
+
+    assert result.status == nvx.SolverStatus.OPTIMAL
+    assert np.allclose(x.value, np.array([3.0, -1.0]), atol=1e-3)

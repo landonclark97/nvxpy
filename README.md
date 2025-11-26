@@ -7,14 +7,16 @@
 
 NVXPY is a Python-based Domain Specific Language (DSL) designed for formulating and solving non-convex programs using a natural, math-inspired API. It is designed to have as similar an interface to [CVXPY](https://github.com/cvxpy/cvxpy) as possible.
 
-NVXPY is not a solver, it uses the solvers exposed by the `minimize` method in SciPy.
+NVXPY is not a solver, it uses solvers from other packages (such as SLSQP, IPOPT, etc.), and includes a built-in Branch-and-Bound solver for mixed-integer nonlinear programs (MINLP).
 
 
 ## Features
 
-* Simple, concise, and generic interface
-* Mediocre efficiency for expression tree evaluations (estimated at 60% - 99% native NumPy)
-* Handles gradients seemlessly, even for custom and non-Autograd functions
+* Simple, concise, and math-inspired interface
+* IR compiler for efficient evaluation (85%-99% as fast as native Python)
+* Built-in Branch-and-Bound MINLP solver with discrete value constraints
+* Graph constructs for clean MIP formulations (wraps networkx)
+* Handles gradients seamlessly, even for custom functions
 
 
 ## Installation
@@ -31,22 +33,24 @@ and has the following dependencies:
 * NumPy >= 2.3
 * SciPy >= 1.15
 * Autograd >= 1.8
+* NetworkX >= 3.0
+* cyipopt (optional, for IPOPT solver)
 
 ## Usage
 
-The following is a simple example to get started with NVXPY:
+### Basic NLP Example
 
 ```python
 import numpy as np
 import nvxpy as nvx
 
 x = nvx.Variable((3,))
-x.value = np.array([-5.0, 0.0, 0.0]) # NLPs require a seed.
+x.value = np.array([-5.0, 0.0, 0.0])  # NLPs require a seed
 
 x_d = np.array([5.0, 0.0, 0.0])
 
 obj = nvx.norm(x - x_d)
-constraints = [nvx.norm(x) >= 1.0] # Non-convex!
+constraints = [nvx.norm(x) >= 1.0]  # Non-convex!
 
 prob = nvx.Problem(nvx.Minimize(obj), constraints)
 prob.solve(solver=nvx.SLSQP)
@@ -54,24 +58,94 @@ prob.solve(solver=nvx.SLSQP)
 print(f'optimized value of x: {x.value}')
 ```
 
-The above code will likely get stuck at a locally optimal solution. To reach the globally optimal solution, we can adjust the seed and re-solve as follows:
+### Mixed-Integer Programming
+
+NVXPY supports integer and binary variables with a built-in Branch-and-Bound solver:
 
 ```python
-x.value = np.array([-5.0, 1.0, 1.0])
-prob.solve(solver=nvx.SLSQP)
+import nvxpy as nvx
 
-print(f'globally optimal value of x: {x.value}')
+# Binary knapsack problem
+x = nvx.Variable(integer=True, name="x")
+y = nvx.Variable(integer=True, name="y")
+
+prob = nvx.Problem(
+    nvx.Maximize(10*x + 6*y),
+    [
+        5*x + 3*y <= 15,
+        x ^ [0, 1],  # x in {0, 1}
+        y ^ [0, 1],  # y in {0, 1}
+    ]
+)
+prob.solve(solver=nvx.BNB)
 ```
+
+### Discrete Value Constraints
+
+Variables can be constrained to discrete sets of values:
+
+```python
+x = nvx.Variable(integer=True)
+
+# x must be one of these values
+prob = nvx.Problem(
+    nvx.Minimize((x - 7)**2),
+    [x ^ [1, 5, 10, 15]]  # x in {1, 5, 10, 15}
+)
+prob.solve(solver=nvx.BNB)  # Optimal: x = 5
+```
+
+### Graph-Based MIP Formulations
+
+NVXPY provides `Graph` and `DiGraph` constructs for clean graph optimization problems:
+
+```python
+import networkx as nx
+import nvxpy as nvx
+
+# Maximum Independent Set
+nxg = nx.petersen_graph()
+G = nvx.Graph(nxg)
+y = G.node_vars(binary=True)
+
+prob = nvx.Problem(
+    nvx.Maximize(nvx.sum([y[i] for i in G.nodes])),
+    G.independent(y)  # y[i] + y[j] <= 1 for all edges
+)
+prob.solve(solver=nvx.BNB)
+```
+
+Available graph helpers:
+- `G.edge_vars(binary=True)` / `G.node_vars(binary=True)` - Create decision variables
+- `G.degree(x) == k` - Degree constraints (undirected)
+- `G.in_degree(x)` / `G.out_degree(x)` - For directed graphs
+- `G.independent(y)` - Independent set constraints
+- `G.covers(x, y)` - Vertex cover constraints
+- `G.total_weight(x)` - Sum of edge weights for objectives
+
+
+## Available Solvers
+
+| Solver | Type | Description |
+|--------|------|-------------|
+| `nvx.SLSQP` | NLP | Sequential Least Squares Programming (SciPy) |
+| `nvx.COBYLA` | NLP | Constrained Optimization BY Linear Approximation |
+| `nvx.TRUST_CONSTR` | NLP | Trust-region constrained algorithm |
+| `nvx.BFGS` | NLP | Unconstrained quasi-Newton method |
+| `nvx.LBFGSB` | NLP | Limited-memory BFGS with bounds |
+| `nvx.NELDER_MEAD` | NLP | Derivative-free simplex method |
+| `nvx.TNC` | NLP | Truncated Newton method |
+| `nvx.IPOPT` | NLP | Interior Point Optimizer (requires cyipopt) |
+| `nvx.BNB` | MINLP | Built-in Branch-and-Bound solver |
 
 
 ## Limitations
 
-NVXPY is in early development. The most pressing issues are as follows:
+NVXPY is in active development. Current limitations:
 
-* Only supports SciPy-based solvers. Ideally most other NLP solvers should be easy to add, such as IPOPT, which provides a similar API to the `minimize` function from SciPy.
-* No plans to support integer programming any time soon. One potential solution is to make a SLP-inspired solver based on the MILP solver from SciPy to enforce integrality constraints. However, any custom solver would probably be out of the scope of this project.
-* Small amount of atomic operations and sets.
-* Unknown and untested edge cases.
+* Branch-and-Bound solver is basic and may struggle with large problems
+* Limited set of atomic operations
+* Some edge cases may be untested
 
 
 ## Development

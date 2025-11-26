@@ -78,6 +78,9 @@ class BaseExpr:
         return Constraint(self, "<<", other)
 
     def __xor__(self, other):
+        if isinstance(other, (list, tuple)):
+            from .sets.integer_set import DiscreteSet
+            other = DiscreteSet(other)
         assert isinstance(other, Set), "Set must be a Set object"
         return other.constrain(self)
 

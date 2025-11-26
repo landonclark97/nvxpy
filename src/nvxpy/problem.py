@@ -1,22 +1,13 @@
-from typing import Optional
-from dataclasses import dataclass
-import time
-import warnings
+from __future__ import annotations
 
-import autograd.numpy as np
-from autograd import grad, jacobian
-from scipy.optimize import minimize
+import time
+from typing import Dict
+
+import autograd.numpy as np  # type: ignore
 
 from .constants import Solver
-from .parser import collect_vars, eval_expression
-
-
-@dataclass(frozen=True)
-class SolverStats:
-    solver_name: str
-    solve_time: Optional[float] = None
-    setup_time: Optional[float] = None
-    num_iters: Optional[int] = None
+from .parser import collect_vars
+from .solvers import ProblemData, get_solver_backend
 
 
 class Minimize:
@@ -30,9 +21,9 @@ class Maximize:
 
 
 class Problem:
-    def __init__(self, objective, constraints=[]):
+    def __init__(self, objective, constraints=None):
         self.objective = objective
-        self.constraints = constraints
+        self.constraints = list(constraints) if constraints is not None else []
 
         self.vars = []
         self.var_shapes = {}
@@ -61,13 +52,62 @@ class Problem:
         self.status = None
         self.solver_stats = None
 
-    def solve(self, solver=Solver.SLSQP, solver_options={}, presolve=False):
+    def solve(self, solver=Solver.SLSQP, solver_options=None, presolve=False, compile=False):
+        """
+        Solve the optimization problem.
+
+        Args:
+            solver: The solver to use (default: SLSQP)
+            solver_options: Options to pass to the solver
+            presolve: Whether to run a presolve phase
+            compile: If True, compile expressions for faster evaluation.
+                     This can significantly speed up problems with complex
+                     expressions that are evaluated many times.
+
+        Returns:
+            SolverResult with solution and status
+        """
+        solver_options = solver_options or {}
+
+        problem_data, backend_options = self._compile_problem_data(
+            solver_options, presolve, compile
+        )
+
+        backend = get_solver_backend(solver)
+        solver_name = solver.value if isinstance(solver, Solver) else str(solver)
+
+        if problem_data.integer_vars and solver_name != Solver.BNB.value:
+            raise ValueError(
+                "Integer variables detected; use the BnB solver (nvx.BNB)."
+            )
+
+        result = backend.solve(problem_data, solver_name, backend_options)
+
+        self.status = result.status
+        self.solver_stats = result.stats
+
+        sol_vars = problem_data.unpack(result.x)
+
+        for v in self.vars:
+            v.value = sol_vars[v.name]
+
+        return result
+
+    def _compile_problem_data(
+        self, solver_options: Dict[str, object], presolve: bool, compile: bool
+    ) -> tuple[ProblemData, Dict[str, object]]:
+        options = dict(solver_options)
+
+        p_tol = options.pop("p_tol", 1e-6)
+        p_maxiter = options.pop("p_maxiter", 100)
+
         start_setup_time = time.time()
 
         x0 = np.ones(self.total_size)
         var_names = [v.name for v in self.vars]
-        var_shapes = self.var_shapes
-        var_slices = self.var_slices
+        var_shapes = dict(self.var_shapes)
+        var_slices = dict(self.var_slices)
+        integer_vars = tuple(v.name for v in self.vars if getattr(v, "is_integer", False))
 
         for v in self.vars:
             v_start, v_end = self.var_slices[v.name]
@@ -76,128 +116,21 @@ class Problem:
             else:
                 x0[v_start:v_end] = np.ravel(v.value)
 
-        def unpack(x):
-            var_dict = {}
-            for v in var_names:
-                start, end = var_slices[v]
-                shape = var_shapes[v]
-                val = x[start:end]
-                var_dict[v] = val if not shape else val.reshape(shape)
-            return var_dict
-
-        def obj_func(x):
-            var_dict = unpack(x)
-            return eval_expression(self.objective.expr, var_dict)
-
-        jac_func = grad(obj_func)
-
-        def dummy_func(_):
-            return 0.0
-
-        def dummy_jac(x):
-            return np.zeros_like(x)
-        
-        p_tol = solver_options.pop("p_tol", 1e-6)
-        uses_projection = any(c.op == "<-" for c in self.constraints)
-
-        cons = []
-        for c in self.constraints:
-
-            def make_con_fun(c):
-                def con_fun(x):
-                    var_dict = unpack(x)
-                    lval = eval_expression(c.left, var_dict)
-                    rval = eval_expression(c.right, var_dict)
-                    if c.op == "<-":
-                        res = p_tol - np.linalg.norm(np.atleast_2d(lval - rval), ord="fro")
-                    else:
-                        res = lval - rval if c.op in [">=", "==", ">>"] else rval - lval
-                    if c.op in [">>", "<<"]:
-                        return np.real(np.ravel(np.linalg.eig(res)[0]))
-                    return np.ravel(res)
-
-                return con_fun, jacobian(con_fun)
-
-            ctype = "eq" if c.op == "==" else "ineq"
-            con_fun, con_jac = make_con_fun(c)                
-            cons.append({"type": ctype, "fun": con_fun, "jac": con_jac})
-
         setup_time = time.time() - start_setup_time
 
-        solve_time = 0.0
-        if presolve:
-
-            start_time = time.time()
-            results_constraints = minimize(
-                dummy_func,
-                x0,
-                jac=dummy_jac,
-                constraints=cons,
-                method=solver,
-                options=solver_options,
-            )
-            x0 = results_constraints.x
-            solve_time += time.time() - start_time
-
-        start_time = time.time()
-        result = minimize(
-            obj_func,
-            x0,
-            jac=jac_func,
-            constraints=cons,
-            method=solver,
-            options=solver_options,
-        )
-        solve_time += time.time() - start_time
-        x0 = result.x
-
-        if uses_projection:
-
-            start_setup_time = time.time()
-            cons = []
-            for c in self.constraints:
-                def make_con_fun(c):
-                    def con_fun(x):
-                        var_dict = unpack(x)
-                        lval = eval_expression(c.left, var_dict)
-                        rval = eval_expression(c.right, var_dict)
-                        res = lval - rval if c.op in [">=", "==", ">>", "<-"] else rval - lval
-                        if c.op in [">>", "<<"]:
-                            return np.real(np.ravel(np.linalg.eig(res)[0]))
-                        return np.ravel(res)
-
-                    return con_fun, jacobian(con_fun)
-
-                ctype = "eq" if c.op in ["==", "<-"] else "ineq"
-                con_fun, con_jac = make_con_fun(c)                
-                cons.append({"type": ctype, "fun": con_fun, "jac": con_jac})
-            
-            setup_time += time.time() - start_setup_time
-
-            start_time = time.time()
-            result_proj = minimize(
-                dummy_func,
-                x0,
-                jac=dummy_jac,
-                constraints=cons,
-                method=solver,
-                options=solver_options | {"maxiter": solver_options.get("p_maxiter", 100)},
-            )
-            solve_time += time.time() - start_time
-            if result_proj.success:
-                x0 = result_proj.x
-            else:
-                warnings.warn(f'Projection step failed with status {result_proj.status}')
-
-        self.status = result.status
-        self.solver_stats = SolverStats(
-            solver_name=solver,
-            solve_time=solve_time,
+        problem_data = ProblemData(
+            x0=x0,
+            var_names=var_names,
+            var_shapes=var_shapes,
+            var_slices=var_slices,
+            objective_expr=self.objective.expr,
+            constraints=tuple(self.constraints),
+            integer_vars=integer_vars,
+            projection_tolerance=p_tol,
+            projection_maxiter=p_maxiter,
+            presolve=presolve,
+            compile=compile,
             setup_time=setup_time,
-            num_iters=result.nit,
         )
 
-        sol_vars = unpack(x0)
-
-        for v in self.vars:
-            v.value = sol_vars[v.name]
+        return problem_data, options

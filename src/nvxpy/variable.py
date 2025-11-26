@@ -1,3 +1,5 @@
+import threading
+
 import autograd.numpy as np
 
 from .expression import BaseExpr
@@ -5,11 +7,26 @@ from .constraint import Constraint
 from .constants import Curvature as C
 
 
+# Thread-local storage for variable ID counter
+_thread_local = threading.local()
+
+
+def _get_next_id() -> int:
+    """Get the next variable ID in a thread-safe manner."""
+    if not hasattr(_thread_local, "var_id"):
+        _thread_local.var_id = 0
+    current = _thread_local.var_id
+    _thread_local.var_id += 1
+    return current
+
+
+def reset_variable_ids():
+    """Reset the variable ID counter for the current thread."""
+    _thread_local.var_id = 0
+
+
 class Variable(BaseExpr):
     __array_priority__ = 100
-
-    _ids = 0
-    _used_names = set()
 
     def __init__(
         self,
@@ -32,16 +49,12 @@ class Variable(BaseExpr):
             "Shape must be a tuple of length 1 or 2"
         )
 
-        if name is not None:
-            if name in Variable._used_names:
-                raise ValueError(f"Variable name {name} already in use")
-        self.name = name if name else f"x{Variable._ids}"
-        Variable._used_names.add(self.name)
+        var_id = _get_next_id()
+        self.name = name if name else f"x{var_id}"
         self.shape = shape
         self.size = int(np.prod(shape)) if shape else 1
         self._value = None
-        self._id = Variable._ids
-        Variable._ids += 1
+        self._id = var_id
 
         self.constraints = []
 
@@ -72,8 +85,7 @@ class Variable(BaseExpr):
             assert not PSD and not pos, "Negative variable cannot be PSD or positive"
             self.constraints.append(Constraint(self, "<=", 0))
 
-        if integer:
-            raise NotImplementedError("Integer variables are not supported yet")
+        self.is_integer = bool(integer)
 
     @property
     def value(self):

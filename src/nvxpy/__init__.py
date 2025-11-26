@@ -14,6 +14,7 @@ __all__ = [
     "LBFGSB",
     "TNC",
     "TRUST_CONSTR",
+    "BNB",
     "CONSTANT",
     "AFFINE",
     "CONVEX",
@@ -26,19 +27,26 @@ __all__ = [
     "maximum",
     "amin",
     "amax",
+    "abs",
     "PolarDecomposition",
     "Function",
+    "Graph",
+    "DiGraph",
     "SO",
     "PerspectiveCone",
+    "IntegerSet",
+    "DiscreteSet",
     "ProjectionSet",
+    "SolverStatus",
 ]
 
-from .variable import Variable
+from .variable import Variable, reset_variable_ids as reset_variable_ids
 from .constraint import Constraint
 from .set import Set
 from .expression import Expr
 from .problem import Problem, Maximize, Minimize
 from .constants import Solver, Curvature
+from .solvers import SolverStatus
 
 SLSQP = Solver.SLSQP
 IPOPT = Solver.IPOPT
@@ -48,6 +56,7 @@ BFGS = Solver.BFGS
 LBFGSB = Solver.LBFGSB
 TNC = Solver.TNC
 TRUST_CONSTR = Solver.TRUST_CONSTR
+BNB = Solver.BNB
 
 CONSTANT = Curvature.CONSTANT
 AFFINE = Curvature.AFFINE
@@ -55,6 +64,6 @@ CONVEX = Curvature.CONVEX
 CONCAVE = Curvature.CONCAVE
 UNKNOWN = Curvature.UNKNOWN
 
-from .atoms import det, norm, sum, trace, maximum, amin, amax, PolarDecomposition
-from .constructs import Function
-from .sets import SO, PerspectiveCone
+from .atoms import det, norm, sum, trace, maximum, amin, amax, abs, PolarDecomposition
+from .constructs import Function, Graph, DiGraph
+from .sets import SO, PerspectiveCone, IntegerSet, DiscreteSet
