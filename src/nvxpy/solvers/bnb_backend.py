@@ -31,6 +31,7 @@ from scipy.optimize import minimize
 from ..parser import eval_expression
 from ..compiler import compile_to_function
 from .base import ProblemData, SolverResult, SolverStats, SolverStatus
+from .scipy_backend import ScipyBackend
 
 
 class NodeSelection(Enum):
@@ -919,11 +920,14 @@ class BranchAndBoundBackend:
 
         # 2. Solve NLP relaxation then round
         try:
-            obj_grad = grad(obj_func)
-            result = minimize(
-                obj_func, x0, method=nlp_method, jac=obj_grad,
-                constraints=cons, options={"maxiter": nlp_maxiter, "ftol": nlp_ftol}
-            )
+            minimize_kwargs = {
+                "method": nlp_method,
+                "constraints": cons,
+                "options": {"maxiter": nlp_maxiter, "ftol": nlp_ftol},
+            }
+            if nlp_method in ScipyBackend.GRADIENT_METHODS:
+                minimize_kwargs["jac"] = grad(obj_func)
+            result = minimize(obj_func, x0, **minimize_kwargs)
             if result.success:
                 x_rounded = self._round_and_fix(
                     result.x, int_indices, int_indices_set, problem_data, cons,
@@ -1002,14 +1006,17 @@ class BranchAndBoundBackend:
 
         # Build objective for continuous vars only
         obj_func = self._build_objective(problem_data)
-        obj_grad = grad(obj_func)
 
         try:
-            result = minimize(
-                obj_func, x_fixed, method=nlp_method, jac=obj_grad,
-                bounds=bounds, constraints=cons,
-                options={"maxiter": nlp_maxiter, "ftol": nlp_ftol}
-            )
+            minimize_kwargs = {
+                "method": nlp_method,
+                "bounds": bounds,
+                "constraints": cons,
+                "options": {"maxiter": nlp_maxiter, "ftol": nlp_ftol},
+            }
+            if nlp_method in ScipyBackend.GRADIENT_METHODS:
+                minimize_kwargs["jac"] = grad(obj_func)
+            result = minimize(obj_func, x_fixed, **minimize_kwargs)
             if result.success:
                 # Verify feasibility
                 feasible = True
@@ -1041,7 +1048,6 @@ class BranchAndBoundBackend:
         method: str = "SLSQP",
     ) -> SolverResult:
         """Solve a pure NLP (no integer variables)."""
-        from .scipy_backend import ScipyBackend
         backend = ScipyBackend()
         return backend.solve(problem_data, method, options)
 
@@ -1076,15 +1082,15 @@ class BranchAndBoundBackend:
                 })
 
         try:
-            result = minimize(
-                obj_func,
-                x0,
-                method=method,
-                jac=obj_grad,
-                bounds=bounds,
-                constraints=all_cons,
-                options={"maxiter": maxiter, "ftol": ftol},
-            )
+            minimize_kwargs = {
+                "method": method,
+                "bounds": bounds,
+                "constraints": all_cons,
+                "options": {"maxiter": maxiter, "ftol": ftol},
+            }
+            if method in ScipyBackend.GRADIENT_METHODS:
+                minimize_kwargs["jac"] = obj_grad
+            result = minimize(obj_func, x0, **minimize_kwargs)
 
             if result.success or result.status not in (2, 8):
                 x_sol = result.x
@@ -1116,7 +1122,10 @@ class BranchAndBoundBackend:
                     if abs(slack) < 1e-4:  # Cut is binding
                         cut.times_active += 1
 
-                return x_sol, float(result.fun)
+                fun = result.fun
+                if np.ndim(fun) > 0:
+                    fun = np.ravel(fun)[0]
+                return x_sol, float(fun)
             return None
 
         except Exception:

@@ -30,6 +30,22 @@ class ScipyBackend:
         "trust-constr",
     }
 
+    # Methods that use gradient information (jac parameter)
+    GRADIENT_METHODS = {
+        "SLSQP",
+        "BFGS",
+        "L-BFGS-B",
+        "TNC",
+        "trust-constr",
+    }
+
+    # Methods that support constraints
+    CONSTRAINED_METHODS = {
+        "SLSQP",
+        "COBYLA",
+        "trust-constr",
+    }
+
     def solve(
         self,
         problem_data: ProblemData,
@@ -63,29 +79,39 @@ class ScipyBackend:
         def dummy_jac(x):
             return np.zeros_like(x)
 
+        uses_gradient = method in self.GRADIENT_METHODS
+        uses_constraints = method in self.CONSTRAINED_METHODS
+
+        if cons and not uses_constraints:
+            raise ValueError(
+                f"Solver '{method}' does not support constraints. "
+                f"Use one of: {', '.join(sorted(self.CONSTRAINED_METHODS))}"
+            )
+
         presolve_result = None
         if problem_data.presolve and cons:
             start_time = time.time()
-            presolve_result = minimize(
-                dummy_func,
-                x0,
-                jac=dummy_jac,
-                constraints=cons,
-                method=method,
-                options=solver_options,
-            )
+            presolve_kwargs = {
+                "method": method,
+                "options": solver_options,
+                "constraints": cons,
+            }
+            if uses_gradient:
+                presolve_kwargs["jac"] = dummy_jac
+            presolve_result = minimize(dummy_func, x0, **presolve_kwargs)
             x0 = presolve_result.x
             solve_time += time.time() - start_time
 
         start_time = time.time()
-        result = minimize(
-            obj_func,
-            x0,
-            jac=gradient,
-            constraints=cons,
-            method=method,
-            options=solver_options,
-        )
+        minimize_kwargs = {
+            "method": method,
+            "options": solver_options,
+        }
+        if uses_gradient:
+            minimize_kwargs["jac"] = gradient
+        if cons:
+            minimize_kwargs["constraints"] = cons
+        result = minimize(obj_func, x0, **minimize_kwargs)
         solve_time += time.time() - start_time
         x_sol = result.x
 
@@ -103,14 +129,14 @@ class ScipyBackend:
                 proj_options.setdefault("maxiter", problem_data.projection_maxiter)
 
                 start_time = time.time()
-                projection_result = minimize(
-                    dummy_func,
-                    x_sol,
-                    jac=dummy_jac,
-                    constraints=proj_cons,
-                    method=method,
-                    options=proj_options,
-                )
+                proj_kwargs = {
+                    "method": method,
+                    "options": proj_options,
+                    "constraints": proj_cons,
+                }
+                if uses_gradient:
+                    proj_kwargs["jac"] = dummy_jac
+                projection_result = minimize(dummy_func, x_sol, **proj_kwargs)
                 solve_time += time.time() - start_time
 
                 if projection_result.success:
