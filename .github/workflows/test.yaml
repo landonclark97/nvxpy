@@ -24,7 +24,7 @@ jobs:
     - name: Install IPOPT system library
       run: |
         sudo apt-get update
-        sudo apt-get install -y coinor-libipopt-dev
+        sudo apt-get install -y coinor-libipopt-dev liblapack-dev libblas-dev gfortran
 
     - name: Install dependencies
       run: |
