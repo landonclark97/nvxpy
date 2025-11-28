@@ -10,6 +10,10 @@ from nvxpy.atoms.abs import abs as nvx_abs
 from nvxpy.atoms.amax import amax
 from nvxpy.atoms.amin import amin
 from nvxpy.atoms.logdet import logdet
+from nvxpy.atoms.log import log
+from nvxpy.atoms.exp import exp
+from nvxpy.atoms.sqrt import sqrt
+from nvxpy.atoms.minimum import minimum
 from nvxpy.variable import Variable
 
 
@@ -175,3 +179,126 @@ def test_det_curvature():
     d = det(X)
     # det of general matrix is unknown
     assert d.curvature == nvx.UNKNOWN
+
+
+def test_log():
+    """Test log atom."""
+    x = np.array([1.0, np.e, np.e**2])
+    log_expr = log(x)
+    assert np.allclose(log_expr(x), np.array([0.0, 1.0, 2.0]))
+
+
+def test_log_curvature():
+    """Test log curvature analysis."""
+    x = Variable(shape=(3,), name="x")
+    log_expr = log(x)
+    # log of affine is concave
+    assert log_expr.curvature == nvx.CONCAVE
+
+    # log of concave is concave (composition rule)
+    neg_sq = -(x ** 2)  # concave
+    l_concave = log(neg_sq)
+    assert l_concave.curvature == nvx.CONCAVE
+
+    # log of constant is constant
+    const = np.array([1.0, 2.0, 3.0])
+    l_const = log(const)
+    assert l_const.curvature == nvx.CONSTANT
+
+    # log of convex is unknown
+    sq = x ** 2  # convex
+    l_convex = log(sq)
+    assert l_convex.curvature == nvx.UNKNOWN
+
+
+def test_exp():
+    """Test exp atom."""
+    x = np.array([0.0, 1.0, 2.0])
+    e = exp(x)
+    assert np.allclose(e(x), np.array([1.0, np.e, np.e**2]))
+
+
+def test_exp_curvature():
+    """Test exp curvature analysis."""
+    x = Variable(shape=(3,), name="x")
+    e = exp(x)
+    # exp of affine is convex
+    assert e.curvature == nvx.CONVEX
+
+    # exp of convex is convex (composition rule)
+    sq = x ** 2  # convex
+    e_convex = exp(sq)
+    assert e_convex.curvature == nvx.CONVEX
+
+    # exp of constant is constant
+    const = np.array([0.0, 1.0, 2.0])
+    e_const = exp(const)
+    assert e_const.curvature == nvx.CONSTANT
+
+    # exp of concave is unknown
+    neg_sq = -(x ** 2)  # concave
+    e_concave = exp(neg_sq)
+    assert e_concave.curvature == nvx.UNKNOWN
+
+
+def test_sqrt():
+    """Test sqrt atom."""
+    x = np.array([1.0, 4.0, 9.0])
+    s = sqrt(x)
+    assert np.allclose(s(x), np.array([1.0, 2.0, 3.0]))
+
+
+def test_sqrt_curvature():
+    """Test sqrt curvature analysis."""
+    x = Variable(shape=(3,), name="x")
+    s = sqrt(x)
+    # sqrt of affine is concave
+    assert s.curvature == nvx.CONCAVE
+
+    # sqrt of concave is concave (composition rule)
+    neg_sq = -(x ** 2)  # concave
+    s_concave = sqrt(neg_sq)
+    assert s_concave.curvature == nvx.CONCAVE
+
+    # sqrt of constant is constant
+    const = np.array([1.0, 4.0, 9.0])
+    s_const = sqrt(const)
+    assert s_const.curvature == nvx.CONSTANT
+
+    # sqrt of convex is unknown
+    sq = x ** 2  # convex
+    s_convex = sqrt(sq)
+    assert s_convex.curvature == nvx.UNKNOWN
+
+
+def test_minimum():
+    """Test minimum atom."""
+    x = np.array([1, 3, 5])
+    y = np.array([2, 2, 6])
+    m = minimum(x, y)
+    assert np.array_equal(m(x, y), np.array([1, 2, 5]))
+
+
+def test_minimum_curvature():
+    """Test minimum curvature analysis."""
+    x = Variable(shape=(3,), name="x")
+    y = Variable(shape=(3,), name="y")
+    m = minimum(x, y)
+    # minimum of two affine is concave
+    assert m.curvature == nvx.CONCAVE
+
+    # minimum of concave and affine is concave
+    neg_sq = -(x ** 2)  # concave
+    m_mixed = minimum(neg_sq, y)
+    assert m_mixed.curvature == nvx.CONCAVE
+
+    # minimum of constant and constant is constant
+    const1 = np.array([1, 2, 3])
+    const2 = np.array([2, 1, 4])
+    m_const = minimum(const1, const2)
+    assert m_const.curvature == nvx.CONSTANT
+
+    # minimum involving convex is unknown
+    sq = x ** 2  # convex
+    m_convex = minimum(sq, y)
+    assert m_convex.curvature == nvx.UNKNOWN

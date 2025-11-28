@@ -25,9 +25,13 @@ __all__ = [
     "sum",
     "trace",
     "maximum",
+    "minimum",
     "amin",
     "amax",
     "abs",
+    "log",
+    "exp",
+    "sqrt",
     "PolarDecomposition",
     "Function",
     "Graph",
@@ -64,6 +68,6 @@ CONVEX = Curvature.CONVEX
 CONCAVE = Curvature.CONCAVE
 UNKNOWN = Curvature.UNKNOWN
 
-from .atoms import det, norm, sum, trace, maximum, amin, amax, abs, PolarDecomposition
+from .atoms import det, norm, sum, trace, maximum, minimum, amin, amax, abs, log, exp, sqrt, PolarDecomposition
 from .constructs import Function, Graph, DiGraph
 from .sets import SO, PerspectiveCone, IntegerSet, DiscreteSet
