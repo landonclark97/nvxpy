@@ -1,4 +1,4 @@
-__all__ = ["Function", "Graph", "DiGraph"]
+__all__ = ["Function", "function", "Graph", "DiGraph"]
 
-from .function import Function
+from .function import Function, function
 from .graph import Graph, DiGraph

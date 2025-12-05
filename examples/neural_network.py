@@ -33,6 +33,7 @@ def linh(x, slope=0.001):
     return out
 
 # forward pass of neural network
+@nvx.function(jac="autograd")
 def forward(X, W, b, activation=lambda x: np.maximum(x, 0)):
     out = X
     for W_i, b_i in zip(W[:-1], b[:-1]):
@@ -40,14 +41,12 @@ def forward(X, W, b, activation=lambda x: np.maximum(x, 0)):
     out = out @ W[-1].T + b[-1]
     return out
 
-nvx_forward = nvx.Function(forward, jac="autograd")
-
 # generate data
 X = np.linspace(-10, 10, BATCH_SIZE).reshape(-1, 1)
 Y = np.sin(X) + 0.1 * (X**2)
 
 # loss function
-Y_hat = nvx_forward(X, W, b, activation=np.tanh)
+Y_hat = forward(X, W, b, activation=np.tanh)
 training_error = nvx.norm(Y_hat - Y, ord="fro") ** 2
 regularization = sum([nvx.norm(W_i, ord="fro") for W_i in W])
 
@@ -57,7 +56,7 @@ obj = training_error + lam * regularization
 
 # train model
 prob = nvx.Problem(nvx.Minimize(obj))
-prob.solve(solver=nvx.LBFGSB)
+prob.solve(solver=nvx.LBFGSB, compile=True)
 
 print(prob.status)
 print(prob.solver_stats)
@@ -67,9 +66,9 @@ print(f"L2 term: {regularization.value}")
 
 x0 = nvx.Variable(shape=(1,))
 x0.value = -5.0
-obj = nvx_forward(x0,[W_i.value for W_i in W], [b_i.value for b_i in b], activation=np.tanh)
+obj = forward(x0,[W_i.value for W_i in W], [b_i.value for b_i in b], activation=np.tanh)
 prob = nvx.Problem(nvx.Minimize(obj))
-prob.solve(solver=nvx.LBFGSB)
+prob.solve(solver=nvx.LBFGSB, compile=True)
 
 print(f'minimizer: {x0.value}')
 print(f'minimizer value: {obj.value}')

@@ -1,5 +1,6 @@
 from ..constraint import Constraint
 from ..set import Set
+from ..constants import EPSILON
 
 
 class PerspectiveCone(Set):
@@ -10,4 +11,4 @@ class PerspectiveCone(Set):
         self.p = p
 
     def constrain(self, var):
-        return Constraint(var, "==", self.p * self.func(self.expr / (self.p + 1e-8)))
+        return Constraint(var, "==", self.p * self.func(self.expr / (self.p + EPSILON)))

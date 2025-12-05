@@ -433,6 +433,99 @@ class TestEdgeCases:
         assert_compiled_matches(expr, var_dict)
 
 
+class TestContainers:
+    """Test container (dict, list, tuple) compilation."""
+
+    def test_list_of_expressions(self):
+        """Compile a list containing expressions."""
+        reset_variable_ids()
+        x = nvx.Variable((3,), name="x")
+        y = nvx.Variable((3,), name="y")
+        expr_list = [x + 1, y * 2, x - y]
+        var_dict = {
+            "x": np.array([1, 2, 3.0]),
+            "y": np.array([4, 5, 6.0]),
+        }
+
+        # Test IR compilation
+        compiled = compile_expression(expr_list)
+        ir_result = eval_compiled(compiled, var_dict)
+        assert isinstance(ir_result, list)
+        assert len(ir_result) == 3
+        np.testing.assert_allclose(ir_result[0], np.array([2, 3, 4.0]))
+        np.testing.assert_allclose(ir_result[1], np.array([8, 10, 12.0]))
+        np.testing.assert_allclose(ir_result[2], np.array([-3, -3, -3.0]))
+
+        # Test codegen compilation
+        codegen_func = compile_to_function(expr_list)
+        codegen_result = codegen_func(var_dict)
+        assert isinstance(codegen_result, list)
+        np.testing.assert_allclose(codegen_result[0], ir_result[0])
+        np.testing.assert_allclose(codegen_result[1], ir_result[1])
+        np.testing.assert_allclose(codegen_result[2], ir_result[2])
+
+    def test_tuple_of_expressions(self):
+        """Compile a tuple containing expressions."""
+        reset_variable_ids()
+        x = nvx.Variable((3,), name="x")
+        expr_tuple = (x + 1, x * 2)
+        var_dict = {"x": np.array([1, 2, 3.0])}
+
+        # Test IR compilation
+        compiled = compile_expression(expr_tuple)
+        ir_result = eval_compiled(compiled, var_dict)
+        assert isinstance(ir_result, tuple)
+        assert len(ir_result) == 2
+        np.testing.assert_allclose(ir_result[0], np.array([2, 3, 4.0]))
+        np.testing.assert_allclose(ir_result[1], np.array([2, 4, 6.0]))
+
+        # Test codegen compilation
+        codegen_func = compile_to_function(expr_tuple)
+        codegen_result = codegen_func(var_dict)
+        assert isinstance(codegen_result, tuple)
+        np.testing.assert_allclose(codegen_result[0], ir_result[0])
+        np.testing.assert_allclose(codegen_result[1], ir_result[1])
+
+    def test_dict_of_expressions(self):
+        """Compile a dict containing expressions."""
+        reset_variable_ids()
+        x = nvx.Variable((3,), name="x")
+        expr_dict = {"squared": x ** 2, "doubled": x * 2, "negated": -x}
+        var_dict = {"x": np.array([1, 2, 3.0])}
+
+        # Test IR compilation
+        compiled = compile_expression(expr_dict)
+        ir_result = eval_compiled(compiled, var_dict)
+        assert isinstance(ir_result, dict)
+        assert set(ir_result.keys()) == {"squared", "doubled", "negated"}
+        np.testing.assert_allclose(ir_result["squared"], np.array([1, 4, 9.0]))
+        np.testing.assert_allclose(ir_result["doubled"], np.array([2, 4, 6.0]))
+        np.testing.assert_allclose(ir_result["negated"], np.array([-1, -2, -3.0]))
+
+        # Test codegen compilation
+        codegen_func = compile_to_function(expr_dict)
+        codegen_result = codegen_func(var_dict)
+        assert isinstance(codegen_result, dict)
+        np.testing.assert_allclose(codegen_result["squared"], ir_result["squared"])
+        np.testing.assert_allclose(codegen_result["doubled"], ir_result["doubled"])
+        np.testing.assert_allclose(codegen_result["negated"], ir_result["negated"])
+
+    def test_mixed_container(self):
+        """Compile container with mix of expressions and constants."""
+        reset_variable_ids()
+        x = nvx.Variable((3,), name="x")
+        expr_list = [x + 1, np.array([10, 20, 30.0]), x * 2]
+        var_dict = {"x": np.array([1, 2, 3.0])}
+
+        # Test IR compilation
+        compiled = compile_expression(expr_list)
+        ir_result = eval_compiled(compiled, var_dict)
+        assert isinstance(ir_result, list)
+        np.testing.assert_allclose(ir_result[0], np.array([2, 3, 4.0]))
+        np.testing.assert_allclose(ir_result[1], np.array([10, 20, 30.0]))
+        np.testing.assert_allclose(ir_result[2], np.array([2, 4, 6.0]))
+
+
 class TestGeneratedCode:
     """Test properties of generated code."""
 

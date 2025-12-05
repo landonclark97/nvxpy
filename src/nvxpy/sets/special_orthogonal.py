@@ -9,5 +9,6 @@ class SO(Set):
         self.n = n
 
     def constrain(self, var):
-        assert var.shape == (self.n, self.n)
+        if var.shape != (self.n, self.n):
+            raise ValueError(f"Variable shape {var.shape} does not match SO({self.n}), expected ({self.n}, {self.n})")
         return Constraint(var, "<-", PolarDecomposition(var))

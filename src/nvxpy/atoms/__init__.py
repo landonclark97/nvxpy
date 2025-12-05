@@ -13,6 +13,8 @@ __all__ = [
     "log",
     "exp",
     "sqrt",
+    "sin",
+    "cos",
 ]
 
 from .det import det
@@ -29,3 +31,5 @@ from .abs import abs
 from .log import log
 from .exp import exp
 from .sqrt import sqrt
+from .sin import sin
+from .cos import cos

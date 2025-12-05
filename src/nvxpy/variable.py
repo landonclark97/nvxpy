@@ -1,4 +1,5 @@
 import threading
+import logging
 
 import autograd.numpy as np
 
@@ -6,9 +7,9 @@ from .expression import BaseExpr
 from .constraint import Constraint
 from .constants import Curvature as C
 
-
 # Thread-local storage for variable ID counter
 _thread_local = threading.local()
+logger = logging.getLogger(__name__)
 
 
 def _get_next_id() -> int:
@@ -20,7 +21,7 @@ def _get_next_id() -> int:
     return current
 
 
-def reset_variable_ids():
+def reset_variable_ids() -> None:
     """Reset the variable ID counter for the current thread."""
     _thread_local.var_id = 0
 
@@ -30,62 +31,78 @@ class Variable(BaseExpr):
 
     def __init__(
         self,
-        shape=(1,),
-        name=None,
-        symmetric=False,
-        PSD=False,
-        NSD=False,
-        pos=False,
-        neg=False,
-        integer=False,
-    ):
-        assert isinstance(shape, tuple), "Shape must be a tuple"
-        assert len(shape) > 0, "Shape must be non-empty"
-        assert all(isinstance(s, int) for s in shape), (
-            "Shape must be a tuple of integers"
-        )
-        assert all(s > 0 for s in shape), "Shape must be a tuple of positive integers"
-        assert len(shape) == 1 or len(shape) == 2, (
-            "Shape must be a tuple of length 1 or 2"
-        )
+        shape: tuple[int, ...] = (1,),
+        name: str | None = None,
+        symmetric: bool = False,
+        PSD: bool = False,
+        NSD: bool = False,
+        pos: bool = False,
+        neg: bool = False,
+        binary: bool = False,
+        integer: bool = False,
+    ) -> None:
+        if not isinstance(shape, tuple):
+            raise TypeError("Shape must be a tuple")
+        if len(shape) == 0:
+            raise ValueError("Shape must be non-empty")
+        if not all(isinstance(s, int) for s in shape):
+            raise TypeError("Shape must be a tuple of integers")
+        if not all(s > 0 for s in shape):
+            raise ValueError("Shape must be a tuple of positive integers")
+        if len(shape) not in (1, 2):
+            raise ValueError("Shape must be a tuple of length 1 or 2")
 
         var_id = _get_next_id()
         self.name = name if name else f"x{var_id}"
         self.shape = shape
-        self.size = int(np.prod(shape)) if shape else 1
+        self.size = int(np.prod(shape))
         self._value = None
         self._id = var_id
 
         self.constraints = []
 
         if symmetric:
-            assert len(shape) == 2, "Symmetric variable must be a square matrix"
-            assert shape[0] == shape[1], "Symmetric variable must be a square matrix"
+            if len(shape) != 2 or shape[0] != shape[1]:
+                raise ValueError("Symmetric variable must be a square matrix")
             U_inds = np.triu_indices(shape[0], k=1)
             L_inds = np.tril_indices(shape[0], k=-1)
             self.constraints.append(Constraint(self[U_inds], "==", self[L_inds]))
 
         if PSD:
-            assert len(shape) == 2, "PSD variable must be a square matrix"
-            assert shape[0] == shape[1], "PSD variable must be a square matrix"
-            assert not neg, "PSD variable cannot be negative"
+            if len(shape) != 2 or shape[0] != shape[1]:
+                raise ValueError("PSD variable must be a square matrix")
+            if neg:
+                raise ValueError("PSD variable cannot be negative")
             self.constraints.append(Constraint(self, ">>", 0))
 
         if NSD:
-            assert len(shape) == 2, "NSD variable must be a square matrix"
-            assert shape[0] == shape[1], "NSD variable must be a square matrix"
-            assert not pos, "NSD variable cannot be positive"
+            if len(shape) != 2 or shape[0] != shape[1]:
+                raise ValueError("NSD variable must be a square matrix")
+            if pos:
+                raise ValueError("NSD variable cannot be positive")
             self.constraints.append(Constraint(self, "<<", 0))
 
         if pos:
-            assert not neg and not NSD, "Positive variable cannot be NSD or negative"
+            if neg or NSD:
+                raise ValueError("Positive variable cannot be NSD or negative")
             self.constraints.append(Constraint(self, ">=", 0))
 
         if neg:
-            assert not PSD and not pos, "Negative variable cannot be PSD or positive"
+            if PSD or pos:
+                raise ValueError("Negative variable cannot be PSD or positive")
             self.constraints.append(Constraint(self, "<=", 0))
 
-        self.is_integer = bool(integer)
+        if binary:
+            if neg or PSD or NSD:
+                raise ValueError("Binary variable cannot be negative, PSD, or NSD")
+            if pos:
+                logger.warning("Setting binary variable to be positive is redundant, can only be 0 or 1")
+            if integer:
+                logger.warning("Setting binary variable to be integer is redundant")
+            self.constraints.append(Constraint(self, ">=", 0))
+            self.constraints.append(Constraint(self, "<=", 1))
+
+        self.is_integer = bool(integer) or bool(binary)
 
     @property
     def value(self):
@@ -93,12 +110,15 @@ class Variable(BaseExpr):
 
     @value.setter
     def value(self, val):
-        self._value = np.array(val).reshape(self.shape)
+        arr = np.array(val)
+        if arr.size != self.size:
+            raise ValueError(f"Cannot assign value with {arr.size} elements to variable with shape {self.shape} ({self.size} elements)")
+        self._value = arr.reshape(self.shape)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Var({self.name}, shape={self.shape})"
-    
-    def __hash__(self):
+
+    def __hash__(self) -> int:
         return hash(str(self))
     
     @property

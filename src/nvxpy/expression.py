@@ -1,19 +1,61 @@
+import autograd.numpy as np
+
 from .constraint import Constraint
 from .set import Set
 from .constants import Curvature as C
-import autograd.numpy as np
 
 
-def expr_to_str(expr):
+# Type alias for values that can be used with expressions
+ExprLike = "BaseExpr | np.ndarray | int | float | complex"
+
+
+def broadcast_shapes(left_shape: tuple, right_shape: tuple) -> tuple:
+    """Compute the result shape of broadcasting two shapes together (NumPy rules)."""
+    if not left_shape or not right_shape:
+        return left_shape if not right_shape else right_shape
+
+    left_shape = list(left_shape)
+    right_shape = list(right_shape)
+
+    while len(left_shape) < len(right_shape):
+        left_shape.insert(0, 1)
+    while len(right_shape) < len(left_shape):
+        right_shape.insert(0, 1)
+
+    result_shape = []
+    for left_dim, right_dim in zip(left_shape, right_shape):
+        if left_dim == 1 or right_dim == 1:
+            result_shape.append(max(left_dim, right_dim))
+        elif left_dim == right_dim:
+            result_shape.append(left_dim)
+        else:
+            raise ValueError(f"Incompatible shapes for broadcasting: {tuple(left_shape)}, {tuple(right_shape)}")
+
+    return tuple(result_shape)
+
+
+def expr_to_str(expr: ExprLike) -> str:
+    """Convert an expression-like object to a string representation."""
     if isinstance(expr, BaseExpr):
         return str(expr)
     elif isinstance(expr, np.ndarray):
         return f"Const(shape={expr.shape}, id={id(expr)})"
     elif np.isscalar(expr):
         return f"Const(type={type(expr).__name__}, id={id(expr)})"
+    return f"Unknown({type(expr).__name__})"
 
 
 class BaseExpr:
+    """Base class for all expression types in nvxpy.
+
+    Provides arithmetic operators (+, -, *, /, @, **) that build expression trees,
+    comparison operators (>=, <=, ==) that create constraints, and matrix operators
+    (>>, <<) for semidefinite constraints.
+
+    The ^ operator creates discrete set membership constraints when used with a
+    DiscreteSet or list of values.
+    """
+
     __array_priority__ = 100
 
     @property
@@ -79,15 +121,27 @@ class BaseExpr:
 
     def __xor__(self, other):
         if isinstance(other, (list, tuple)):
-            from .sets.integer_set import DiscreteSet
-            other = DiscreteSet(other)
-        assert isinstance(other, Set), "Set must be a Set object"
+            from .sets.discrete_set import _coerce_to_discrete_set
+            other = _coerce_to_discrete_set(other)
+        if not isinstance(other, Set):
+            raise TypeError("Right operand of ^ must be a Set object")
         return other.constrain(self)
 
 
 class Expr(BaseExpr):
+    """An expression node in the computation graph.
 
-    def __init__(self, op, left, right=None):
+    Represents an operation applied to one or two operands. Operations include
+    arithmetic (add, sub, mul, div, pow, neg), matrix operations (matmul, transpose),
+    and indexing (getitem).
+
+    Attributes:
+        op: The operation name (e.g., "add", "mul", "matmul")
+        left: The left operand (or only operand for unary operations)
+        right: The right operand (None for unary operations)
+    """
+
+    def __init__(self, op: str, left, right=None):
         self.op = op
         self.left = left
         self.right = right
@@ -225,27 +279,7 @@ class Expr(BaseExpr):
         right_shape = get_shape(self.right) if self.right is not None else None
 
         if self.op in ("add", "sub", "mul", "div"):
-            if not left_shape or not right_shape:
-                return left_shape if not right_shape else right_shape
-            
-            left_shape = list(left_shape)
-            right_shape = list(right_shape)
-            
-            while len(left_shape) < len(right_shape):
-                left_shape.insert(0, 1)
-            while len(right_shape) < len(left_shape):
-                right_shape.insert(0, 1)
-                
-            result_shape = []
-            for left_dim, right_dim in zip(left_shape, right_shape):
-                if left_dim == 1 or right_dim == 1:
-                    result_shape.append(max(left_dim, right_dim))
-                elif left_dim == right_dim:
-                    result_shape.append(left_dim)
-                else:
-                    raise ValueError(f"Incompatible shapes for {self.op}: {tuple(left_shape)}, {tuple(right_shape)}")
-            
-            return tuple(result_shape)
+            return broadcast_shapes(left_shape, right_shape)
 
         elif self.op == "pow":
             return left_shape
@@ -293,25 +327,59 @@ class Expr(BaseExpr):
             if isinstance(self.right, tuple):
                 new_shape = []
                 orig_shape = list(left_shape)
+                dim_idx = 0
                 for idx in self.right:
+                    if dim_idx >= len(orig_shape):
+                        raise IndexError(f"too many indices for array of dimension {len(orig_shape)}")
+                    dim_size = orig_shape[dim_idx]
                     if isinstance(idx, slice):
                         start = 0 if idx.start is None else idx.start
-                        stop = orig_shape[len(new_shape)] if idx.stop is None else idx.stop
+                        stop = dim_size if idx.stop is None else idx.stop
                         step = 1 if idx.step is None else idx.step
-                        new_shape.append((stop - start) // step)
+                        if step == 0:
+                            raise ValueError("Slice step cannot be zero")
+                        # Normalize negative indices
+                        if start < 0:
+                            start = max(0, dim_size + start)
+                        if stop < 0:
+                            stop = max(0, dim_size + stop)
+                        # Clamp to valid range
+                        start = min(start, dim_size)
+                        stop = min(stop, dim_size)
+                        new_shape.append(max(0, (stop - start + step - 1) // step) if step > 0 else max(0, (start - stop - step - 1) // (-step)))
+                        dim_idx += 1
                     elif isinstance(idx, int):
+                        # Validate index bounds
+                        if idx < -dim_size or idx >= dim_size:
+                            raise IndexError(f"index {idx} is out of bounds for axis {dim_idx} with size {dim_size}")
+                        dim_idx += 1
                         continue
                     else:
                         raise ValueError(f"Unsupported index type: {type(idx)}")
                 return tuple(new_shape) if new_shape else (1,)
             elif isinstance(self.right, (int, slice)):
                 if isinstance(self.right, int):
+                    dim_size = left_shape[0] if left_shape else 0
+                    if self.right < -dim_size or self.right >= dim_size:
+                        raise IndexError(f"index {self.right} is out of bounds for axis 0 with size {dim_size}")
                     return left_shape[1:] if len(left_shape) > 1 else (1,)
                 else:
+                    dim_size = left_shape[0] if left_shape else 0
                     start = 0 if self.right.start is None else self.right.start
-                    stop = left_shape[0] if self.right.stop is None else self.right.stop
+                    stop = dim_size if self.right.stop is None else self.right.stop
                     step = 1 if self.right.step is None else self.right.step
-                    return ((stop - start) // step,) + left_shape[1:]
+                    if step == 0:
+                        raise ValueError("Slice step cannot be zero")
+                    # Normalize negative indices
+                    if start < 0:
+                        start = max(0, dim_size + start)
+                    if stop < 0:
+                        stop = max(0, dim_size + stop)
+                    # Clamp to valid range
+                    start = min(start, dim_size)
+                    stop = min(stop, dim_size)
+                    slice_len = max(0, (stop - start + step - 1) // step) if step > 0 else max(0, (start - stop - step - 1) // (-step))
+                    return (slice_len,) + left_shape[1:]
             else:
                 raise ValueError(f"Unsupported index type: {type(self.right)}")
 

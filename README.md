@@ -5,7 +5,7 @@
 
 ## Overview
 
-NVXPY is a Python-based Domain Specific Language (DSL) designed for formulating and solving non-convex programs using a natural, math-inspired API. It is designed to have as similar an interface to [CVXPY](https://github.com/cvxpy/cvxpy) as possible.
+NVXPY is a Python-based Domain Specific Language (DSL) designed for formulating and solving non-convex programs using a natural, math-inspired API. It is designed to have as similar an interface to [CVXPY](https://www.cvxpy.org/) as possible.
 
 NVXPY is not a solver, it uses solvers from other packages (such as SLSQP, IPOPT, etc.), and includes a built-in Branch-and-Bound solver for mixed-integer nonlinear programs (MINLP).
 
@@ -13,9 +13,9 @@ NVXPY is not a solver, it uses solvers from other packages (such as SLSQP, IPOPT
 ## Features
 
 * Simple, concise, and math-inspired interface
-* IR compiler for efficient evaluation (85%-99% as fast as native Python)
+* Codegen compiler for efficient evaluation (85%-99% as fast as native Python)
 * Built-in Branch-and-Bound MINLP solver with discrete value constraints
-* Graph constructs for clean MIP formulations (wraps networkx)
+* Graph constructs for clean MIP formulations (wraps [networkx](https://networkx.org/en/))
 * Handles gradients seamlessly, even for custom functions
 
 
@@ -124,19 +124,78 @@ Available graph helpers:
 - `G.total_weight(x)` - Sum of edge weights for objectives
 
 
+### Custom Functions
+
+Wrap arbitrary Python functions using the `@nvx.function` decorator:
+
+```python
+import autograd.numpy as np
+import nvxpy as nvx
+
+@nvx.function(jac="autograd")
+def rosenbrock(x):
+    return (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
+
+x = nvx.Variable(shape=(2,))
+x.value = np.array([0.0, 0.0])
+
+prob = nvx.Problem(nvx.Minimize(rosenbrock(x)))
+prob.solve(solver=nvx.LBFGSB)
+```
+
+Options:
+- `jac="numerical"` - Finite difference gradients (default)
+- `jac="autograd"` - Automatic differentiation via autograd
+- `jac=callable` - User-provided Jacobian function
+
+
 ## Available Solvers
 
-| Solver | Type | Description |
-|--------|------|-------------|
-| `nvx.SLSQP` | NLP | Sequential Least Squares Programming (SciPy) |
-| `nvx.COBYLA` | NLP | Constrained Optimization BY Linear Approximation |
-| `nvx.TRUST_CONSTR` | NLP | Trust-region constrained algorithm |
-| `nvx.BFGS` | NLP | Unconstrained quasi-Newton method |
-| `nvx.LBFGSB` | NLP | Limited-memory BFGS with bounds |
-| `nvx.NELDER_MEAD` | NLP | Derivative-free simplex method |
-| `nvx.TNC` | NLP | Truncated Newton method |
-| `nvx.IPOPT` | NLP | Interior Point Optimizer (requires cyipopt) |
-| `nvx.BNB` | MINLP | Built-in Branch-and-Bound solver |
+### Gradient-Free
+
+| Solver | Description |
+|--------|-------------|
+| `nvx.NELDER_MEAD` | Derivative-free simplex method |
+| `nvx.POWELL` | Derivative-free conjugate direction method |
+| `nvx.COBYLA` | Constrained Optimization BY Linear Approximation |
+| `nvx.COBYQA` | Constrained Optimization BY Quadratic Approximation |
+
+### Gradient-Based
+
+| Solver | Description |
+|--------|-------------|
+| `nvx.CG` | Conjugate gradient method |
+| `nvx.BFGS` | Quasi-Newton method |
+| `nvx.LBFGSB` | Limited-memory BFGS with bounds |
+| `nvx.TNC` | Truncated Newton method |
+| `nvx.SLSQP` | Sequential Least Squares Programming (supports constraints) |
+
+### Hessian-Based
+
+| Solver | Description |
+|--------|-------------|
+| `nvx.NEWTON_CG` | Newton-CG trust region method |
+| `nvx.DOGLEG` | Dogleg trust region method |
+| `nvx.TRUST_NCG` | Trust-region Newton-CG |
+| `nvx.TRUST_KRYLOV` | Trust-region with Krylov subspace |
+| `nvx.TRUST_EXACT` | Trust-region with exact Hessian |
+| `nvx.TRUST_CONSTR` | Trust-region constrained algorithm |
+
+### Global Optimizers
+
+| Solver | Description |
+|--------|-------------|
+| `nvx.DIFF_EVOLUTION` | Differential evolution |
+| `nvx.DUAL_ANNEALING` | Dual annealing |
+| `nvx.SHGO` | Simplicial homology global optimization |
+| `nvx.BASINHOPPING` | Basin-hopping with local minimization |
+
+### Other
+
+| Solver | Description |
+|--------|-------------|
+| `nvx.IPOPT` | Interior Point Optimizer (requires cyipopt) |
+| `nvx.BNB` | Built-in Branch-and-Bound MINLP solver |
 
 
 ## Limitations

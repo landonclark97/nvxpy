@@ -70,7 +70,7 @@ def test_perspective_cone_constrain():
 # =============================================================================
 
 def test_discrete_set_initialization():
-    from nvxpy.sets.integer_set import DiscreteSet
+    from nvxpy.sets.discrete_set import DiscreteSet
 
     # Integer values
     ds = DiscreteSet([1, 5, 10, 3])
@@ -87,7 +87,7 @@ def test_discrete_set_initialization():
 
 
 def test_discrete_set_membership():
-    from nvxpy.sets.integer_set import DiscreteSet
+    from nvxpy.sets.discrete_set import DiscreteSet
 
     ds = DiscreteSet([1, 5, 10])
     assert 1 in ds
@@ -102,7 +102,7 @@ def test_discrete_set_membership():
 
 
 def test_discrete_set_nearest():
-    from nvxpy.sets.integer_set import DiscreteSet
+    from nvxpy.sets.discrete_set import DiscreteSet
 
     ds = DiscreteSet([1, 5, 10, 20])
     assert ds.nearest(3) == 1.0 or ds.nearest(3) == 5.0  # 3 is equidistant
@@ -111,7 +111,7 @@ def test_discrete_set_nearest():
 
 
 def test_discrete_set_constraint():
-    from nvxpy.sets.integer_set import DiscreteSet
+    from nvxpy.sets.discrete_set import DiscreteSet
 
     var = Variable(integer=True, name="x")
     ds = DiscreteSet([1, 5, 10])
@@ -155,7 +155,7 @@ def test_discrete_set_solve_integer():
 
     result = prob.solve(solver=nvx.BNB)
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value.item() == 5.0
+    assert x.value == 5.0
 
 
 def test_discrete_set_solve_float():
@@ -173,7 +173,7 @@ def test_discrete_set_solve_float():
 
     result = prob.solve(solver=nvx.BNB)
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert abs(y.value.item() - 0.5) < 1e-5
+    assert abs(y.value - 0.5) < 1e-5
 
 
 def test_discrete_set_multiple_vars():
@@ -191,8 +191,8 @@ def test_discrete_set_multiple_vars():
 
     result = prob.solve(solver=nvx.BNB)
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value.item() == 2.0
-    assert y.value.item() == 1.0
+    assert x.value == 2.0
+    assert y.value == 1.0
 
 
 def test_discrete_set_with_other_constraints():
@@ -217,4 +217,25 @@ def test_discrete_set_with_other_constraints():
 
     result = prob.solve(solver=nvx.BNB)
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value.item() + y.value.item() >= 5 - 1e-5
+    assert x.value + y.value >= 5 - 1e-5
+
+
+def test_discrete_set_integer_var_with_floats_raises():
+    """Test that integer variable with non-integer discrete set raises error."""
+    import pytest
+
+    nvx.reset_variable_ids()
+    x = Variable(integer=True, name="x")
+
+    with pytest.raises(ValueError, match="non-integer values"):
+        x ^ [1.2, 2.2, 4.2, -2.2]
+
+
+def test_discrete_set_continuous_var_with_floats_ok():
+    """Test that continuous variable with non-integer discrete set is allowed."""
+    nvx.reset_variable_ids()
+    x = Variable(name="x")  # continuous
+
+    # This should not raise
+    cons = x ^ [1.2, 2.2, 4.2, -2.2]
+    assert cons.op == "in"

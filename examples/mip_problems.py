@@ -79,7 +79,7 @@ def knapsack_problem():
     selected_value = 0
     selected_weight = 0
     for i, item in enumerate(items):
-        if x[i].value.item() > 0.5:
+        if x[i].value > 0.5:
             print(f"  [X] {item}")
             selected_value += values[i]
             selected_weight += weights[i]
@@ -155,7 +155,7 @@ def maximum_independent_set():
         print(f"  {people[i]} -- {people[j]}")
 
     print("\nMaximum independent set (strangers who can form a focus group):")
-    selected = [people[i] for i in G.nodes if y[i].value.item() > 0.5]
+    selected = [people[i] for i in G.nodes if y[i].value > 0.5]
     print(f"  {', '.join(selected)}")
     print(f"\nSet size: {len(selected)}")
     print(f"Status: {result.status}")
@@ -227,7 +227,7 @@ def minimum_vertex_cover():
         print(f"  {intersections[i]} -- {intersections[j]}")
 
     print("\nOptimal camera placement:")
-    cameras = [intersections[i] for i in G.nodes if y[i].value.item() > 0.5]
+    cameras = [intersections[i] for i in G.nodes if y[i].value > 0.5]
     print(f"  Cameras at: {', '.join(cameras)}")
     print(f"\nNumber of cameras needed: {len(cameras)}")
     print(f"Status: {result.status}")
@@ -311,7 +311,7 @@ def set_cover_problem():
         print(f"  {name}: {', '.join(covered_names)}")
 
     print("\nOptimal station placement:")
-    selected = [station_names[j] for j in range(n_stations) if x[j].value.item() > 0.5]
+    selected = [station_names[j] for j in range(n_stations) if x[j].value > 0.5]
     for station in selected:
         print(f"  [X] {station}")
 
@@ -414,12 +414,12 @@ def graph_coloring():
 
     print("\nOptimal exam schedule:")
     for c in range(max_colors):
-        if y[c].value.item() > 0.5:
-            slot_courses = [courses[i] for i in range(n) if x[i][c].value.item() > 0.5]
+        if y[c].value > 0.5:
+            slot_courses = [courses[i] for i in range(n) if x[i][c].value > 0.5]
             if slot_courses:
                 print(f"  Time Slot {c + 1}: {', '.join(slot_courses)}")
 
-    num_used = sum(1 for c in range(max_colors) if y[c].value.item() > 0.5)
+    num_used = sum(1 for c in range(max_colors) if y[c].value > 0.5)
     print(f"\nMinimum time slots needed: {num_used}")
     print(f"Status: {result.status}")
 
@@ -526,7 +526,7 @@ def facility_location():
     print("\nOptimal solution:")
     print("  Open warehouses:")
     for j, wh in enumerate(warehouses):
-        if y[j].value.item() > 0.5:
+        if y[j].value > 0.5:
             print(f"    [X] {wh}")
         else:
             print(f"    [ ] {wh}")
@@ -534,16 +534,16 @@ def facility_location():
     print("\n  Store assignments:")
     for i, store in enumerate(stores):
         for j, wh in enumerate(warehouses):
-            if x[i][j].value.item() > 0.5:
+            if x[i][j].value > 0.5:
                 print(f"    {store} <- {wh} (cost: ${transport_costs[j][i]})")
 
     # Calculate total cost
-    total_fixed = sum(fixed_costs[j] for j in range(n_warehouses) if y[j].value.item() > 0.5)
+    total_fixed = sum(fixed_costs[j] for j in range(n_warehouses) if y[j].value > 0.5)
     total_transport = sum(
         transport_costs[j][i]
         for i in range(n_stores)
         for j in range(n_warehouses)
-        if x[i][j].value.item() > 0.5
+        if x[i][j].value > 0.5
     )
     print(f"\n  Fixed costs: ${total_fixed}")
     print(f"  Transport costs: ${total_transport}")
@@ -685,7 +685,7 @@ def traveling_salesman():
     current = 0
     for _ in range(n - 1):
         for j in range(n):
-            if j != current and (current, j) in x and x[current, j].value.item() > 0.5:
+            if j != current and (current, j) in x and x[current, j].value > 0.5:
                 tour.append(j)
                 current = j
                 break
@@ -773,7 +773,13 @@ def bin_packing():
             constraints.append(x[i][j] ^ [0, 1])
 
     problem = Problem(Minimize(num_bins), constraints)
-    result = problem.solve(solver=BNB)
+    # Note: Bin packing has a weak LP relaxation, so we use a higher gap tolerance.
+    # The LP relaxation allows fractional bin usage (e.g., 2.8 bins), making it hard
+    # to prove optimality of an integer solution (3 bins). A 10% gap tolerance
+    # accepts the solution once we know it's within 10% of optimal.
+    result = problem.solve(solver=BNB, solver_options={
+        "bb_rel_gap": 0.10,  # Accept 10% gap (good enough for bin packing)
+    })
 
     print("\nItems and sizes:")
     for i, item in enumerate(items):
@@ -784,12 +790,12 @@ def bin_packing():
 
     print("\nOptimal packing:")
     for j in range(n_bins):
-        if y[j].value.item() > 0.5:
-            bin_items = [items[i] for i in range(n_items) if x[i][j].value.item() > 0.5]
-            bin_size = sum(sizes[i] for i in range(n_items) if x[i][j].value.item() > 0.5)
+        if y[j].value > 0.5:
+            bin_items = [items[i] for i in range(n_items) if x[i][j].value > 0.5]
+            bin_size = sum(sizes[i] for i in range(n_items) if x[i][j].value > 0.5)
             print(f"  Bin {j + 1}: {', '.join(bin_items)} (total: {bin_size}/{capacity})")
 
-    num_used = sum(1 for j in range(n_bins) if y[j].value.item() > 0.5)
+    num_used = sum(1 for j in range(n_bins) if y[j].value > 0.5)
     print(f"\nMinimum bins needed: {num_used}")
     print(f"Status: {result.status}")
 
@@ -873,7 +879,7 @@ def assignment_problem():
     total = 0
     for i, worker in enumerate(workers):
         for j, task in enumerate(tasks):
-            if x[i][j].value.item() > 0.5:
+            if x[i][j].value > 0.5:
                 print(f"  {worker} -> {task} (cost: {costs[i][j]})")
                 total += costs[i][j]
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import time
+import warnings
 from typing import Dict
 
 import autograd.numpy as np
@@ -10,7 +12,12 @@ from autograd import grad, jacobian
 
 from ..parser import eval_expression
 from ..compiler import compile_to_function
+from ..constants import EPSILON, DEFAULT_SOLVER_TOL
+
+logger = logging.getLogger(__name__)
 from .base import (
+    build_objective,
+    uses_projection,
     ProblemData,
     SolverResult,
     SolverStats,
@@ -41,25 +48,19 @@ class IpoptBackend:
                 "Use nvx.BNB for mixed-integer problems."
             )
 
-        if any(
-            getattr(constraint, "op", None) in {">>", "<<", "<-"}
-            for constraint in problem_data.constraints
-        ):
-            raise NotImplementedError(
-                "IPOPT backend does not support PSD or projection constraints"
-            )
-
         x0 = np.asarray(problem_data.x0, dtype=float)
         n = len(x0)
         setup_time = problem_data.setup_time
 
         # Build objective and gradient
         compile_start = time.time()
-        obj_func = self._build_objective(problem_data)
+        obj_func = build_objective(problem_data)
         obj_grad = grad(obj_func)
 
         # Build constraints
-        eq_constraints, ineq_constraints = self._build_constraints(problem_data)
+        eq_constraints, ineq_constraints = self._build_constraints(
+            problem_data, for_projection=False
+        )
         setup_time += time.time() - compile_start
 
         # Count constraint dimensions
@@ -108,23 +109,79 @@ class IpoptBackend:
         # Set IPOPT options
         nlp.add_option("print_level", solver_options.get("print_level", 0))
         nlp.add_option("max_iter", solver_options.get("maxiter", 1000))
-        nlp.add_option("tol", solver_options.get("tol", 1e-8))
+        nlp.add_option("tol", solver_options.get("tol", DEFAULT_SOLVER_TOL))
 
         # Additional user options
         for key, value in solver_options.items():
             if key not in {"lb", "ub", "print_level", "maxiter", "tol"}:
                 try:
                     nlp.add_option(key, value)
-                except Exception:
-                    pass  # Ignore invalid options
+                except Exception as e:
+                    logger.warning(f"Invalid option '{key}={value}': {e}")
 
         # Solve
         start_time = time.time()
         x_sol, info = nlp.solve(x0)
         solve_time = time.time() - start_time
 
+        # Projection phase for <- constraints
+        projection_info = None
+        if uses_projection(problem_data):
+            compile_start = time.time()
+            proj_eq, proj_ineq = self._build_constraints(
+                problem_data, for_projection=True
+            )
+            setup_time += time.time() - compile_start
+
+            n_proj_eq = sum(self._constraint_dim(c, x_sol) for c in proj_eq)
+            n_proj_ineq = sum(self._constraint_dim(c, x_sol) for c in proj_ineq)
+            m_proj = n_proj_eq + n_proj_ineq
+
+            if m_proj > 0:
+                proj_con_func, proj_con_jac = self._build_combined_constraints(
+                    proj_eq, proj_ineq, n, m_proj
+                )
+
+                proj_cl = np.zeros(m_proj)
+                proj_cu = np.concatenate([
+                    np.zeros(n_proj_eq),
+                    np.full(n_proj_ineq, np.inf),
+                ]) if m_proj > 0 else np.array([])
+
+                # Dummy objective for projection (just find feasible point)
+                def dummy_obj(_):
+                    return 0.0
+
+                def dummy_grad(x):
+                    return np.zeros_like(x)
+
+                proj_nlp = cyipopt.Problem(
+                    n=n,
+                    m=m_proj,
+                    problem_obj=_IpoptProblem(dummy_obj, dummy_grad, proj_con_func, proj_con_jac),
+                    lb=lb,
+                    ub=ub,
+                    cl=proj_cl,
+                    cu=proj_cu,
+                )
+
+                proj_nlp.add_option("print_level", 0)
+                proj_nlp.add_option("max_iter", problem_data.projection_maxiter)
+                proj_nlp.add_option("tol", solver_options.get("tol", DEFAULT_SOLVER_TOL))
+
+                start_time = time.time()
+                proj_x_sol, projection_info = proj_nlp.solve(x_sol)
+                solve_time += time.time() - start_time
+
+                if projection_info.get("status", -100) in [0, 1, 6]:
+                    x_sol = proj_x_sol
+                else:
+                    warnings.warn(
+                        f"Projection step failed with status {projection_info.get('status')}"
+                    )
+
         # Interpret status
-        status = self._interpret_status(info)
+        status = self._interpret_status(info, projection_info)
 
         stats = SolverStats(
             solver_name="IPOPT",
@@ -137,31 +194,25 @@ class IpoptBackend:
             x=x_sol,
             status=status,
             stats=stats,
-            raw_result=info,
+            raw_result={"primary": info, "projection": projection_info},
         )
 
     @staticmethod
-    def _build_objective(problem_data: ProblemData):
-        """Build objective function."""
-        if problem_data.compile:
-            compiled_obj = compile_to_function(problem_data.objective_expr)
+    def _build_constraints(problem_data: ProblemData, for_projection: bool = False):
+        """Build separate lists of equality and inequality constraint functions.
 
-            def obj(x):
-                var_dict = problem_data.unpack(x)
-                return compiled_obj(var_dict)
-        else:
-            def obj(x):
-                var_dict = problem_data.unpack(x)
-                return eval_expression(problem_data.objective_expr, var_dict)
-
-        return obj
-
-    @staticmethod
-    def _build_constraints(problem_data: ProblemData):
-        """Build separate lists of equality and inequality constraint functions."""
+        Handles all constraint types:
+        - >= : Greater than or equal (inequality)
+        - <= : Less than or equal (inequality)
+        - == : Equality
+        - >> : Positive semidefinite - eigenvalues must be >= 0
+        - << : Negative semidefinite - eigenvalues must be <= 0
+        - <- : Projection constraint (soft inequality during solve, equality during projection)
+        """
         eq_constraints = []
         ineq_constraints = []
         use_compile = problem_data.compile
+        p_tol = problem_data.projection_tolerance
 
         for constraint in problem_data.constraints:
             if constraint.op == "in":
@@ -177,23 +228,51 @@ class IpoptBackend:
                         var_dict = problem_data.unpack(x)
                         lval = compiled_left(var_dict)
                         rval = compiled_right(var_dict)
-                        res = lval - rval if c.op in [">=", "=="] else rval - lval
+                        if c.op == "<-":
+                            if for_projection:
+                                res = lval - rval
+                            else:
+                                # Use epsilon smoothing to avoid gradient singularity at zero
+                                diff = np.atleast_2d(lval - rval)
+                                res = p_tol - np.sqrt(np.sum(diff * diff) + EPSILON)
+                        else:
+                            res = (
+                                lval - rval
+                                if c.op in [">=", "==", ">>"]
+                                else rval - lval
+                            )
+                        if c.op in [">>", "<<"]:
+                            res = np.real(np.ravel(np.linalg.eig(res)[0]))
                         return np.ravel(res)
                 else:
                     def con_fun(x):
                         var_dict = problem_data.unpack(x)
                         lval = eval_expression(c.left, var_dict)
                         rval = eval_expression(c.right, var_dict)
-                        res = lval - rval if c.op in [">=", "=="] else rval - lval
+                        if c.op == "<-":
+                            if for_projection:
+                                res = lval - rval
+                            else:
+                                # Use epsilon smoothing to avoid gradient singularity at zero
+                                diff = np.atleast_2d(lval - rval)
+                                res = p_tol - np.sqrt(np.sum(diff * diff) + EPSILON)
+                        else:
+                            res = (
+                                lval - rval
+                                if c.op in [">=", "==", ">>"]
+                                else rval - lval
+                            )
+                        if c.op in [">>", "<<"]:
+                            res = np.real(np.ravel(np.linalg.eig(res)[0]))
                         return np.ravel(res)
 
                 return con_fun
 
             con_fun = make_con_fun(constraint)
 
-            if constraint.op == "==":
+            if constraint.op == "==" or (for_projection and constraint.op == "<-"):
                 eq_constraints.append(con_fun)
-            else:  # >= or <=
+            else:  # >=, <=, >>, <<, or <- (main solve)
                 ineq_constraints.append(con_fun)
 
         return eq_constraints, ineq_constraints
@@ -222,7 +301,7 @@ class IpoptBackend:
         return combined_con, combined_jac
 
     @staticmethod
-    def _interpret_status(info: dict) -> SolverStatus:
+    def _interpret_status(info: dict, projection_info: dict = None) -> SolverStatus:
         """Interpret IPOPT return status.
 
         IPOPT ApplicationReturnStatus codes:
@@ -248,10 +327,11 @@ class IpoptBackend:
         """
         status = info.get("status", -100)
 
+        # Map status code to solver status
         if status == 0:  # Solve_Succeeded
-            return SolverStatus.OPTIMAL
+            base_status = SolverStatus.OPTIMAL
         elif status == 1:  # Solved_To_Acceptable_Level
-            return SolverStatus.SUBOPTIMAL
+            base_status = SolverStatus.SUBOPTIMAL
         elif status == 2:  # Infeasible_Problem_Detected
             return SolverStatus.INFEASIBLE
         elif status == 3:  # Search_Direction_Becomes_Too_Small
@@ -261,7 +341,7 @@ class IpoptBackend:
         elif status == 5:  # User_Requested_Stop
             return SolverStatus.ERROR
         elif status == 6:  # Feasible_Point_Found (for square problems)
-            return SolverStatus.OPTIMAL
+            base_status = SolverStatus.OPTIMAL
         elif status == -1:  # Maximum_Iterations_Exceeded
             return SolverStatus.MAX_ITERATIONS
         elif status == -2:  # Restoration_Failed
@@ -282,6 +362,14 @@ class IpoptBackend:
             return SolverStatus.NUMERICAL_ERROR
         else:
             return SolverStatus.UNKNOWN
+
+        # If projection was attempted and failed, downgrade to suboptimal
+        if projection_info is not None:
+            proj_status = projection_info.get("status", -100)
+            if proj_status not in [0, 1, 6]:
+                return SolverStatus.SUBOPTIMAL
+
+        return base_status
 
 
 class _IpoptProblem:

@@ -3,10 +3,11 @@ from __future__ import annotations
 import time
 from typing import Dict
 
-import autograd.numpy as np  # type: ignore
+import autograd.numpy as np
 
-from .constants import Solver
+from .constants import Solver, DEFAULT_PROJECTION_TOL
 from .parser import collect_vars
+from .sets.discrete_set import DiscreteSet, DiscreteRanges
 from .solvers import ProblemData, get_solver_backend
 
 
@@ -21,7 +22,13 @@ class Maximize:
 
 
 class Problem:
-    def __init__(self, objective, constraints=None):
+    """An optimization problem with objective and constraints."""
+
+    def __init__(self, objective: Minimize | Maximize, constraints=None):
+        if not isinstance(objective, (Minimize, Maximize)):
+            raise TypeError(
+                f"Objective must be Minimize or Maximize, got {type(objective).__name__}"
+            )
         self.objective = objective
         self.constraints = list(constraints) if constraints is not None else []
 
@@ -36,11 +43,7 @@ class Problem:
             collect_vars(c.left, all_vars)
             collect_vars(c.right, all_vars)
 
-        variable_constraints = []
-        for v in all_vars:
-            variable_constraints.extend(v.constraints)
-        self.constraints += variable_constraints
-
+        # Deduplicate variables before collecting their embedded constraints
         self.vars = []
         for v in all_vars:
             if v.name not in self.var_shapes:
@@ -49,15 +52,39 @@ class Problem:
                 self.total_size += v.size
                 self.vars.append(v)
 
+        # Now collect embedded constraints from unique variables only
+        variable_constraints = []
+        for v in self.vars:
+            variable_constraints.extend(v.constraints)
+        self.constraints += variable_constraints
+
         self.status = None
         self.solver_stats = None
 
-    def solve(self, solver=Solver.SLSQP, solver_options=None, presolve=False, compile=False):
+    def _has_discrete_constraints(self, constraints) -> bool:
+        """Check if any constraint involves a DiscreteSet or DiscreteRanges."""
+        for c in constraints:
+            if c.op == "in" and isinstance(c.right, (DiscreteSet, DiscreteRanges)):
+                return True
+        return False
+
+    def _select_default_solver(self, has_integers: bool, has_discrete: bool, has_constraints: bool) -> Solver:
+        """Select the default solver based on problem characteristics."""
+        if has_integers or has_discrete:
+            return Solver.BNB
+        if has_constraints:
+            return Solver.SLSQP
+        return Solver.LBFGSB
+
+    def solve(self, solver=None, solver_options=None, presolve=False, compile=False):
         """
         Solve the optimization problem.
 
         Args:
-            solver: The solver to use (default: SLSQP)
+            solver: The solver to use. If None, automatically selects:
+                    - BNB for problems with integer variables or discrete constraints
+                    - SLSQP for problems with constraints
+                    - L-BFGS-B for unconstrained problems
             solver_options: Options to pass to the solver
             presolve: Whether to run a presolve phase
             compile: If True, compile expressions for faster evaluation.
@@ -73,12 +100,20 @@ class Problem:
             solver_options, presolve, compile
         )
 
+        # Auto-select solver if not specified
+        if solver is None:
+            has_integers = bool(problem_data.integer_vars)
+            has_discrete = self._has_discrete_constraints(problem_data.constraints)
+            has_constraints = bool(problem_data.constraints)
+            solver = self._select_default_solver(has_integers, has_discrete, has_constraints)
+
         backend = get_solver_backend(solver)
         solver_name = solver.value if isinstance(solver, Solver) else str(solver)
 
-        if problem_data.integer_vars and solver_name != Solver.BNB.value:
+        has_discrete = self._has_discrete_constraints(problem_data.constraints)
+        if (problem_data.integer_vars or has_discrete) and solver_name != Solver.BNB.value:
             raise ValueError(
-                "Integer variables detected; use the BnB solver (nvx.BNB)."
+                "Integer variables or discrete constraints detected; use the BnB solver (nvx.BNB)."
             )
 
         result = backend.solve(problem_data, solver_name, backend_options)
@@ -98,8 +133,13 @@ class Problem:
     ) -> tuple[ProblemData, Dict[str, object]]:
         options = dict(solver_options)
 
-        p_tol = options.pop("p_tol", 1e-6)
+        p_tol = options.pop("p_tol", DEFAULT_PROJECTION_TOL)
         p_maxiter = options.pop("p_maxiter", 100)
+
+        if p_tol <= 0:
+            raise ValueError(f"p_tol must be positive, got {p_tol}")
+        if p_maxiter <= 0:
+            raise ValueError(f"p_maxiter must be positive, got {p_maxiter}")
 
         start_setup_time = time.time()
 

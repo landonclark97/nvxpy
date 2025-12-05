@@ -1,5 +1,5 @@
-__all__ = ["SO", "PerspectiveCone", "IntegerSet", "DiscreteSet"]
+__all__ = ["SO", "PerspectiveCone", "DiscreteSet", "DiscreteRanges", "Range"]
 
 from .special_orthogonal import SO
 from .perspective_cone import PerspectiveCone
-from .integer_set import IntegerSet, DiscreteSet
+from .discrete_set import DiscreteSet, DiscreteRanges, Range

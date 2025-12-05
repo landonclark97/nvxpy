@@ -216,7 +216,7 @@ class TestGraphSolving:
         assert result.status == nvx.SolverStatus.OPTIMAL
 
         # Optimal vertex cover for path of 4: nodes 1 and 2 (or similar)
-        selected = sum(1 for var in y.values() if var.value.item() > 0.5)
+        selected = sum(1 for var in y.values() if var.value > 0.5)
         assert selected == 2
 
     def test_maximum_independent_set(self):
@@ -242,7 +242,7 @@ class TestGraphSolving:
 
         # Max independent set in star graph: all leaves (3) or just center (1)
         # Leaves win: 3 > 1
-        selected = sum(1 for var in y.values() if var.value.item() > 0.5)
+        selected = sum(1 for var in y.values() if var.value > 0.5)
         assert selected == 3
 
     def test_degree_constrained_subgraph(self):
@@ -265,5 +265,5 @@ class TestGraphSolving:
         assert result.status == nvx.SolverStatus.OPTIMAL
 
         # Should select exactly 4 edges (Hamiltonian cycle in K4)
-        selected = sum(1 for var in x.values() if var.value.item() > 0.5)
+        selected = sum(1 for var in x.values() if var.value > 0.5)
         assert selected == 4

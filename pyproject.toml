@@ -1,6 +1,6 @@
 [project]
 name = "nvxpy"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Python DSL for simply and easily formulating and solving non-convex optimization problems."
 authors = [
     {name = "Landon Clark",email = "landonclark97@gmail.com"}

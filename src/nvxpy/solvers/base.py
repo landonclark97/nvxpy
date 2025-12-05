@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Protocol, Sequence, Tuple
 
 import autograd.numpy as anp  # type: ignore
 
@@ -64,9 +64,9 @@ class ProblemData:
 @dataclass
 class SolverStats:
     solver_name: str
-    solve_time: Optional[float] = None
-    setup_time: Optional[float] = None
-    num_iters: Optional[int] = None
+    solve_time: float | None = None
+    setup_time: float | None = None
+    num_iters: int | None = None
 
 
 @dataclass
@@ -74,7 +74,7 @@ class SolverResult:
     x: ArrayLike
     status: SolverStatus
     stats: SolverStats
-    raw_result: Optional[object] = None
+    raw_result: object | None = None
 
 
 class SolverBackend(Protocol):
@@ -85,5 +85,55 @@ class SolverBackend(Protocol):
         solver_options: Dict[str, object],
     ) -> SolverResult:
         ...
+
+
+# =============================================================================
+# Shared Solver Utilities
+# =============================================================================
+
+def build_objective(problem_data: ProblemData) -> Callable[[ArrayLike], float]:
+    """
+    Build an objective function from problem data.
+    
+    This is shared across all solver backends. When `problem_data.compile` is True,
+    uses the codegen compiler for better performance. Otherwise uses the interpreter.
+    
+    Args:
+        problem_data: The problem specification containing the objective expression
+        
+    Returns:
+        A callable that takes a flat variable array and returns the objective value
+    """
+    from ..parser import eval_expression
+    from ..compiler import compile_to_function
+    
+    if problem_data.compile:
+        compiled_obj = compile_to_function(problem_data.objective_expr)
+
+        def obj(x):
+            var_dict = problem_data.unpack(x)
+            return compiled_obj(var_dict)
+    else:
+        def obj(x):
+            var_dict = problem_data.unpack(x)
+            return eval_expression(problem_data.objective_expr, var_dict)
+
+    return obj
+
+
+def uses_projection(problem_data: ProblemData) -> bool:
+    """
+    Check if any constraint in the problem requires projection.
+    
+    Projection constraints use the "<-" operator and require a two-phase solve:
+    first the main optimization, then a projection step to satisfy the constraint.
+    
+    Args:
+        problem_data: The problem specification
+        
+    Returns:
+        True if any constraint uses the "<-" projection operator
+    """
+    return any(getattr(c, "op", None) == "<-" for c in problem_data.constraints)
 
 

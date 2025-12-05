@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from typing import Any, Iterator, TYPE_CHECKING
 
 
 from ..variable import Variable
 from ..constraint import Constraint
 from ..expression import Expr
+
+if TYPE_CHECKING:
+    import networkx as nx
 
 
 class EdgeVars:
@@ -148,7 +151,7 @@ class DegreeExpr:
 class BaseGraph:
     """Base class for Graph and DiGraph."""
 
-    def __init__(self, nx_graph, weight_attr: str = "weight"):
+    def __init__(self, nx_graph: "nx.Graph | nx.DiGraph", weight_attr: str = "weight"):
         """
         Args:
             nx_graph: A networkx graph (Graph or DiGraph)
@@ -178,15 +181,13 @@ class BaseGraph:
             EdgeVars dict-like mapping (u, v) -> Variable
         """
         variables = {}
-        for i, (u, v) in enumerate(self._nx_graph.edges()):
+        for _, (u, v) in enumerate(self._nx_graph.edges()):
             var = Variable(
                 shape=(1,),
                 name=f"{name_prefix}_{u}_{v}",
-                integer=binary or integer,
+                binary=binary,
+                integer=integer,
             )
-            if binary:
-                var.constraints.append(Constraint(var, ">=", 0))
-                var.constraints.append(Constraint(var, "<=", 1))
             variables[(u, v)] = var
         return EdgeVars(self, variables, binary=binary)
 
@@ -207,11 +208,9 @@ class BaseGraph:
             var = Variable(
                 shape=(1,),
                 name=f"{name_prefix}_{node}",
-                integer=binary or integer,
+                binary=binary,
+                integer=integer,
             )
-            if binary:
-                var.constraints.append(Constraint(var, ">=", 0))
-                var.constraints.append(Constraint(var, "<=", 1))
             variables[node] = var
         return NodeVars(self, variables, binary=binary)
 
@@ -252,10 +251,7 @@ class BaseGraph:
         if not terms:
             return 0
 
-        result = terms[0]
-        for t in terms[1:]:
-            result = result + t
-        return result
+        return sum(terms)
 
     def covers(self, edge_vars: EdgeVars, node_vars: NodeVars) -> list[Constraint]:
         """Vertex cover constraints: each edge must be covered by at least one endpoint.
@@ -316,16 +312,12 @@ class BaseGraph:
                 if u == node:
                     outflow_terms.append(var)
 
-            def sum_terms(terms):
-                if not terms:
-                    return 0
-                result = terms[0]
-                for t in terms[1:]:
-                    result = result + t
-                return result
+            
+            if not (inflow_terms or outflow_terms):
+                return 0
 
-            inflow = sum_terms(inflow_terms)
-            outflow = sum_terms(outflow_terms)
+            inflow = sum(inflow_terms)
+            outflow = sum(outflow_terms)
 
             if node == source:
                 constraints.append(Constraint(outflow - inflow, "==", demand))
@@ -356,7 +348,7 @@ class Graph(BaseGraph):
         prob = nvx.Problem(nvx.Minimize(G.total_weight(x)), constraints)
     """
 
-    def __init__(self, nx_graph, weight_attr: str = "weight"):
+    def __init__(self, nx_graph: "nx.Graph", weight_attr: str = "weight"):
         import networkx as nx
         if isinstance(nx_graph, nx.DiGraph):
             raise TypeError("Use DiGraph for directed graphs")
@@ -381,7 +373,7 @@ class DiGraph(BaseGraph):
         ]
     """
 
-    def __init__(self, nx_graph, weight_attr: str = "weight"):
+    def __init__(self, nx_graph: "nx.DiGraph", weight_attr: str = "weight"):
         import networkx as nx
         if not isinstance(nx_graph, nx.DiGraph):
             raise TypeError("Use Graph for undirected graphs")

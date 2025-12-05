@@ -5,12 +5,14 @@ import warnings
 from typing import Dict, List
 
 import autograd.numpy as np  # type: ignore
-from autograd import grad, jacobian  # type: ignore
+from autograd import grad, jacobian, hessian  # type: ignore
 from scipy.optimize import minimize  # type: ignore
 
 from ..parser import eval_expression
 from ..compiler import compile_to_function
 from .base import (
+    build_objective,
+    uses_projection,
     ConstraintData,
     ProblemData,
     SolverResult,
@@ -21,28 +23,55 @@ from .base import (
 
 class ScipyBackend:
     SUPPORTED_METHODS = {
-        "SLSQP",
-        "COBYLA",
+        # Gradient-free
         "Nelder-Mead",
+        "Powell",
+        "COBYLA",
+        "COBYQA",
+        # Gradient-based
+        "CG",
         "BFGS",
         "L-BFGS-B",
         "TNC",
+        "SLSQP",
+        # Hessian-based
+        "Newton-CG",
+        "dogleg",
+        "trust-ncg",
+        "trust-krylov",
+        "trust-exact",
         "trust-constr",
     }
 
     # Methods that use gradient information (jac parameter)
     GRADIENT_METHODS = {
-        "SLSQP",
+        "CG",
         "BFGS",
         "L-BFGS-B",
         "TNC",
+        "SLSQP",
+        "Newton-CG",
+        "dogleg",
+        "trust-ncg",
+        "trust-krylov",
+        "trust-exact",
         "trust-constr",
+    }
+
+    # Methods that use Hessian information
+    HESSIAN_METHODS = {
+        "Newton-CG",
+        "dogleg",
+        "trust-ncg",
+        "trust-krylov",
+        "trust-exact",
     }
 
     # Methods that support constraints
     CONSTRAINED_METHODS = {
         "SLSQP",
         "COBYLA",
+        "COBYQA",
         "trust-constr",
     }
 
@@ -63,8 +92,10 @@ class ScipyBackend:
         setup_time = problem_data.setup_time
         solve_time = 0.0
 
-        obj_func = self._build_objective(problem_data)
+        obj_func = build_objective(problem_data)
         gradient = grad(obj_func)
+        uses_hessian = method in self.HESSIAN_METHODS
+        hess_func = hessian(obj_func) if uses_hessian else None
 
         compile_start = time.time()
         constraint_data = self._build_constraint_data(
@@ -103,12 +134,21 @@ class ScipyBackend:
             solve_time += time.time() - start_time
 
         start_time = time.time()
+        options = dict(solver_options)
+
+        # Default trust region parameters for dogleg
+        if method == "dogleg":
+            options.setdefault("initial_trust_radius", 0.1)
+            options.setdefault("max_trust_radius", 1.0)
+
         minimize_kwargs = {
             "method": method,
-            "options": solver_options,
+            "options": options,
         }
         if uses_gradient:
             minimize_kwargs["jac"] = gradient
+        if uses_hessian:
+            minimize_kwargs["hess"] = hess_func
         if cons:
             minimize_kwargs["constraints"] = cons
         result = minimize(obj_func, x0, **minimize_kwargs)
@@ -116,7 +156,7 @@ class ScipyBackend:
         x_sol = result.x
 
         projection_result = None
-        if self._uses_projection(problem_data):
+        if uses_projection(problem_data):
             compile_start = time.time()
             projection_data = self._build_constraint_data(
                 problem_data, for_projection=True
@@ -167,22 +207,6 @@ class ScipyBackend:
             stats=stats,
             raw_result=raw_result,
         )
-
-    @staticmethod
-    def _build_objective(problem_data: ProblemData):
-        if problem_data.compile:
-            # Use compiled evaluation for better performance
-            compiled_obj = compile_to_function(problem_data.objective_expr)
-
-            def obj(x):
-                var_dict = problem_data.unpack(x)
-                return compiled_obj(var_dict)
-        else:
-            def obj(x):
-                var_dict = problem_data.unpack(x)
-                return eval_expression(problem_data.objective_expr, var_dict)
-
-        return obj
 
     @staticmethod
     def _build_constraint_data(
@@ -265,10 +289,6 @@ class ScipyBackend:
     @staticmethod
     def _to_scipy_constraint(constraint: ConstraintData) -> Dict[str, object]:
         return {"type": constraint.type, "fun": constraint.fun, "jac": constraint.jac}
-
-    @staticmethod
-    def _uses_projection(problem_data: ProblemData) -> bool:
-        return any(getattr(c, "op", None) == "<-" for c in problem_data.constraints)
 
     @staticmethod
     def _interpret_status(result, projection_result) -> SolverStatus:

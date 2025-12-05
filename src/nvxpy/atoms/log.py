@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import autograd.numpy as np
 
-from ..expression import Expr, BaseExpr
+from ..expression import Expr, BaseExpr, ExprLike
 from ..constants import Curvature as C
 
 
@@ -16,14 +18,14 @@ class log(Expr):
     - log(convex) -> unknown
     """
 
-    def __init__(self, left):
+    def __init__(self, left: ExprLike) -> None:
         super().__init__("log", left)
 
-    def __call__(self, x):
+    def __call__(self, x: np.ndarray) -> np.ndarray:
         return np.log(x)
 
     @property
-    def curvature(self):
+    def curvature(self) -> C:
         arg = self.left
         arg_cvx = arg.curvature if isinstance(arg, BaseExpr) else C.CONSTANT
 
@@ -35,3 +37,9 @@ class log(Expr):
             return C.CONCAVE
 
         return C.UNKNOWN
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        if isinstance(self.left, BaseExpr):
+            return self.left.shape
+        return np.shape(self.left) or (1,)

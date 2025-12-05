@@ -1,14 +1,16 @@
-from typing import Callable, Iterable
+from __future__ import annotations
+
+from typing import Any, Iterable
 
 import autograd.numpy as np
 
-from .expression import Expr
+from .expression import Expr, ExprLike
 from .variable import Variable
 from .constructs.function import Function
 
 
-
-def collect_vars(expr, vars):
+def collect_vars(expr: ExprLike, vars: list[Variable]) -> None:
+    """Recursively collect all Variable instances from an expression tree."""
     if isinstance(expr, Variable):
         vars.append(expr)
     elif isinstance(expr, Function):
@@ -26,7 +28,10 @@ def collect_vars(expr, vars):
             collect_vars(e, vars)
 
 
-def eval_expression(expr, var_dict, use_value=False):
+def eval_expression(
+    expr: ExprLike, var_dict: dict[str, np.ndarray] | None, use_value: bool = False
+) -> Any:
+    """Evaluate an expression tree by substituting variable values."""
     if isinstance(expr, Variable):
         if use_value:
             return expr.value
@@ -67,14 +72,15 @@ def eval_expression(expr, var_dict, use_value=False):
             return left_eval.T
         elif expr.op == "flatten":
             return left_eval.flatten()
-        elif isinstance(expr, Callable):
+        elif callable(expr):
+            # Handle callable Expr subclasses (atoms like norm, abs, etc.)
             return expr(left_eval) if right_eval is None else expr(left_eval, right_eval)
         else:
             raise NotImplementedError(expr.op)
-        
+
     elif isinstance(expr, dict):
         return {k: eval_expression(v, var_dict, use_value) for k, v in expr.items()}
-    
+
     elif isinstance(expr, Iterable) and not isinstance(expr, np.ndarray):
         container = type(expr)
         return container([eval_expression(e, var_dict, use_value) for e in expr])
