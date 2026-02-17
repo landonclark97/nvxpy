@@ -14,7 +14,7 @@ import autograd.numpy as np
 from autograd import jacobian
 
 from ...constants import Curvature, DEFAULT_NEAR_ZERO
-from ..base import ProblemData  # Re-export from base
+from ..base import ProblemData
 from .node import BBNode
 
 logger = logging.getLogger(__name__)
