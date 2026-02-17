@@ -329,7 +329,7 @@ def test_bnb_verbose_with_discrete():
     result = prob.solve(solver=nvx.BNB, solver_options={"verbose": True})
 
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert float(x.value) == 5.0
+    assert x.value.item() == 5.0
 
 
 def test_bnb_verbose_with_time_limit():
