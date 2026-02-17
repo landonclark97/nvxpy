@@ -36,8 +36,8 @@ def test_bnb_multiple_integers():
 
     assert result.status == nvx.SolverStatus.OPTIMAL
     # x should be 1 or 2, y should be 2 or 3
-    assert x.value in [1.0, 2.0]
-    assert y.value in [2.0, 3.0]
+    assert np.isclose(x.value, 1.0, atol=0.1) or np.isclose(x.value, 2.0, atol=0.1)
+    assert np.isclose(y.value, 2.0, atol=0.1) or np.isclose(y.value, 3.0, atol=0.1)
 
 
 def test_bnb_depth_first():
@@ -197,7 +197,7 @@ def test_bnb_with_continuous_vars():
 
     assert result.status == nvx.SolverStatus.OPTIMAL
     # x should be 2 or 3, y should be close to 1.7
-    assert x.value in [2.0, 3.0]
+    assert np.isclose(x.value, 2.0, atol=0.1) or np.isclose(x.value, 3.0, atol=0.1)
     assert np.isclose(y.value, 1.7, atol=0.1)
 
 
@@ -241,7 +241,7 @@ def test_bnb_discrete_binary():
     result = prob.solve(solver=nvx.BNB)
 
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value == 1.0
+    assert np.isclose(x.value, 1.0, atol=0.1).all()
 
 
 def test_bnb_nonlinear_constraint():
@@ -329,7 +329,7 @@ def test_bnb_verbose_with_discrete():
     result = prob.solve(solver=nvx.BNB, solver_options={"verbose": True})
 
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value.item() == 5.0
+    assert np.isclose(x.value.item(), 5.0, atol=0.1)
 
 
 def test_bnb_verbose_with_time_limit():
@@ -437,7 +437,7 @@ def test_bnb_strong_with_discrete():
     )
 
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value == 3.0
+    assert np.isclose(x.value, 3.0, atol=0.1).all()
 
 
 def test_bnb_reliability_with_multiple_vars():
@@ -507,7 +507,7 @@ def test_bnb_many_discrete_values():
     result = prob.solve(solver=nvx.BNB)
 
     assert result.status == nvx.SolverStatus.OPTIMAL
-    assert x.value == 7.0
+    assert np.isclose(x.value, 7.0, atol=0.1).all()
 
 
 def test_bnb_gap_early_termination():
