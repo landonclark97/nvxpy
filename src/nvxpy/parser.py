@@ -6,14 +6,14 @@ import autograd.numpy as np
 
 from .expression import Expr, ExprLike
 from .variable import Variable
-from .constructs.function import Function
+from .constructs.function import FunctionExpr
 
 
 def collect_vars(expr: ExprLike, vars: list[Variable]) -> None:
     """Recursively collect all Variable instances from an expression tree."""
     if isinstance(expr, Variable):
         vars.append(expr)
-    elif isinstance(expr, Function):
+    elif isinstance(expr, FunctionExpr):
         for arg in expr.args:
             collect_vars(arg, vars)
     elif isinstance(expr, Expr):
@@ -38,7 +38,7 @@ def eval_expression(
         else:
             return var_dict[expr.name]
 
-    elif isinstance(expr, Function):
+    elif isinstance(expr, FunctionExpr):
         args = []
         for arg in expr.args:
             args.append(eval_expression(arg, var_dict, use_value))
@@ -74,7 +74,9 @@ def eval_expression(
             return left_eval.flatten()
         elif callable(expr):
             # Handle callable Expr subclasses (atoms like norm, abs, etc.)
-            return expr(left_eval) if right_eval is None else expr(left_eval, right_eval)
+            return (
+                expr(left_eval) if right_eval is None else expr(left_eval, right_eval)
+            )
         else:
             raise NotImplementedError(expr.op)
 

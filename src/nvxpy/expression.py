@@ -29,7 +29,9 @@ def broadcast_shapes(left_shape: tuple, right_shape: tuple) -> tuple:
         elif left_dim == right_dim:
             result_shape.append(left_dim)
         else:
-            raise ValueError(f"Incompatible shapes for broadcasting: {tuple(left_shape)}, {tuple(right_shape)}")
+            raise ValueError(
+                f"Incompatible shapes for broadcasting: {tuple(left_shape)}, {tuple(right_shape)}"
+            )
 
     return tuple(result_shape)
 
@@ -61,7 +63,7 @@ class BaseExpr:
     @property
     def T(self):
         return Expr("transpose", self)
-    
+
     def flatten(self):
         return Expr("flatten", self)
 
@@ -91,7 +93,7 @@ class BaseExpr:
 
     def __truediv__(self, other):
         return Expr("div", self, other)
-    
+
     def __rtruediv__(self, other):
         return Expr("div", other, self)
 
@@ -122,7 +124,10 @@ class BaseExpr:
     def __xor__(self, other):
         if isinstance(other, (list, tuple)):
             from .sets.discrete_set import _coerce_to_discrete_set
-            other = _coerce_to_discrete_set(other)
+
+            # Get variable size for shape-aware coercion
+            var_size = getattr(self, "size", 1)
+            other = _coerce_to_discrete_set(other, var_size=var_size)
         if not isinstance(other, Set):
             raise TypeError("Right operand of ^ must be a Set object")
         return other.constrain(self)
@@ -151,16 +156,21 @@ class Expr(BaseExpr):
         right_str = None
         if self.right is not None:
             right_str = expr_to_str(self.right)
-        return f"{self.op}({left_str}, {right_str})" if right_str else f"{self.op}({left_str})"
-    
+        return (
+            f"{self.op}({left_str}, {right_str})"
+            if right_str
+            else f"{self.op}({left_str})"
+        )
+
     def __hash__(self):
         return hash(str(self))
 
     @property
     def value(self):
         from .parser import eval_expression
+
         return eval_expression(self, None, use_value=True)
-    
+
     @property
     def curvature(self):
         from .variable import Variable
@@ -172,7 +182,7 @@ class Expr(BaseExpr):
                 return C.CONVEX
             else:
                 return conv
-            
+
         if isinstance(self.left, Expr) or isinstance(self.left, Variable):
             left = self.left.curvature
             if left == C.CONSTANT:
@@ -226,14 +236,27 @@ class Expr(BaseExpr):
 
         elif self.op == "pow":
             if right == C.CONSTANT:
-                if right_val == 1:
+                exp = float(right_val) if hasattr(right_val, "__float__") else right_val
+                is_integer = isinstance(exp, int) or (
+                    isinstance(exp, float) and exp.is_integer()
+                )
+
+                if exp == 1:
                     return left
-                elif right_val > 1 and left in (C.CONVEX, C.AFFINE):
-                    return C.CONVEX
-                elif 0 < right_val < 1 and left == C.CONCAVE:
-                    return C.CONCAVE
-                else:
+                elif exp == 0:
+                    return C.CONSTANT
+
+                # Negative exponents require positivity analysis we don't have
+                if exp < 0:
                     return C.UNKNOWN
+
+                # Even integer powers of affine/constant expressions are convex
+                # (x**2 is convex regardless of sign of x)
+                if is_integer and int(exp) % 2 == 0 and int(exp) >= 2:
+                    if left in (C.AFFINE, C.CONSTANT):
+                        return C.CONVEX
+
+                return C.UNKNOWN
             else:
                 return C.UNKNOWN
 
@@ -253,10 +276,10 @@ class Expr(BaseExpr):
 
         elif self.op == "transpose":
             return left
-        
+
         elif self.op == "flatten":
             return left
-        
+
         raise NotImplementedError(f"Curvature of Expr: {self.op} is not implemented")
 
     @property
@@ -270,7 +293,7 @@ class Expr(BaseExpr):
                 return obj.shape
             elif np.isscalar(obj):
                 return ()
-            elif isinstance(obj, (slice, tuple)):
+            elif isinstance(obj, (slice, tuple)) or obj is ... or obj is Ellipsis:
                 return None
             else:
                 raise ValueError(f"Cannot determine shape of {type(obj)}")
@@ -288,25 +311,36 @@ class Expr(BaseExpr):
             return left_shape
 
         elif self.op == "matmul":
+            # Handle vector @ vector -> scalar
             if len(left_shape) == 1 and len(right_shape) == 1:
                 if left_shape[0] != right_shape[0]:
-                    raise ValueError(f"Incompatible shapes for matmul: {left_shape}, {right_shape}")
+                    raise ValueError(
+                        f"Incompatible shapes for matmul: {left_shape}, {right_shape}"
+                    )
                 return ()
-            elif len(left_shape) == 1:
-                left_shape = (1,) + left_shape
-            elif len(right_shape) == 1:
-                right_shape = right_shape + (1,)
-            
+
+            # Track original 1D status before modifying shapes
+            original_left_1d = len(left_shape) == 1
+            original_right_1d = len(right_shape) == 1
+
+            # Promote 1D to 2D for computation
+            if original_left_1d:
+                left_shape = (1,) + left_shape  # Row vector
+            if original_right_1d:
+                right_shape = right_shape + (1,)  # Column vector
+
             if left_shape[-1] != right_shape[-2]:
-                raise ValueError(f"Incompatible shapes for matmul: {left_shape}, {right_shape}")
-            
+                raise ValueError(
+                    f"Incompatible shapes for matmul: {left_shape}, {right_shape}"
+                )
+
             left_batch = left_shape[:-2]
             right_batch = right_shape[:-2]
-            
+
             max_batch_dims = max(len(left_batch), len(right_batch))
             left_batch = (1,) * (max_batch_dims - len(left_batch)) + left_batch
             right_batch = (1,) * (max_batch_dims - len(right_batch)) + right_batch
-            
+
             batch_shape = []
             for left_dim, right_dim in zip(left_batch, right_batch):
                 if left_dim == 1 or right_dim == 1:
@@ -314,23 +348,60 @@ class Expr(BaseExpr):
                 elif left_dim == right_dim:
                     batch_shape.append(left_dim)
                 else:
-                    raise ValueError(f"Incompatible batch dimensions for matmul: {left_shape}, {right_shape}")
-            
+                    raise ValueError(
+                        f"Incompatible batch dimensions for matmul: {left_shape}, {right_shape}"
+                    )
+
             result_shape = tuple(batch_shape) + (left_shape[-2], right_shape[-1])
-            
-            if len(left_shape) == 1:
-                result_shape = result_shape[1:]
-            
+
+            # Remove dimensions that were added for 1D inputs
+            if original_left_1d:
+                # Remove the leading dimension from result
+                result_shape = (
+                    result_shape[1:] if len(result_shape) > 1 else result_shape
+                )
+            if original_right_1d:
+                # Remove the trailing dimension from result
+                result_shape = result_shape[:-1] if result_shape else ()
+
             return result_shape
 
         elif self.op == "getitem":
             if isinstance(self.right, tuple):
+                # Expand ellipsis if present
+                indices = list(self.right)
+                ellipsis_idx = None
+                for i, idx in enumerate(indices):
+                    if idx is ... or idx is Ellipsis:
+                        if ellipsis_idx is not None:
+                            raise IndexError(
+                                "an index can only have a single ellipsis ('...')"
+                            )
+                        ellipsis_idx = i
+
+                if ellipsis_idx is not None:
+                    # Count non-ellipsis indices
+                    n_explicit = len(indices) - 1
+                    n_dims = len(left_shape)
+                    n_ellipsis_dims = n_dims - n_explicit
+                    if n_ellipsis_dims < 0:
+                        raise IndexError(
+                            f"too many indices for array of dimension {n_dims}"
+                        )
+                    # Replace ellipsis with appropriate number of slice(None)
+                    expanded = indices[:ellipsis_idx]
+                    expanded.extend([slice(None)] * n_ellipsis_dims)
+                    expanded.extend(indices[ellipsis_idx + 1 :])
+                    indices = expanded
+
                 new_shape = []
                 orig_shape = list(left_shape)
                 dim_idx = 0
-                for idx in self.right:
+                for idx in indices:
                     if dim_idx >= len(orig_shape):
-                        raise IndexError(f"too many indices for array of dimension {len(orig_shape)}")
+                        raise IndexError(
+                            f"too many indices for array of dimension {len(orig_shape)}"
+                        )
                     dim_size = orig_shape[dim_idx]
                     if isinstance(idx, slice):
                         start = 0 if idx.start is None else idx.start
@@ -346,23 +417,34 @@ class Expr(BaseExpr):
                         # Clamp to valid range
                         start = min(start, dim_size)
                         stop = min(stop, dim_size)
-                        new_shape.append(max(0, (stop - start + step - 1) // step) if step > 0 else max(0, (start - stop - step - 1) // (-step)))
+                        new_shape.append(
+                            max(0, (stop - start + step - 1) // step)
+                            if step > 0
+                            else max(0, (start - stop - step - 1) // (-step))
+                        )
                         dim_idx += 1
                     elif isinstance(idx, int):
                         # Validate index bounds
                         if idx < -dim_size or idx >= dim_size:
-                            raise IndexError(f"index {idx} is out of bounds for axis {dim_idx} with size {dim_size}")
+                            raise IndexError(
+                                f"index {idx} is out of bounds for axis {dim_idx} with size {dim_size}"
+                            )
                         dim_idx += 1
                         continue
                     else:
                         raise ValueError(f"Unsupported index type: {type(idx)}")
-                return tuple(new_shape) if new_shape else (1,)
+                return tuple(new_shape) if new_shape else ()
+            elif self.right is ... or self.right is Ellipsis:
+                # x[...] returns the same shape
+                return left_shape
             elif isinstance(self.right, (int, slice)):
                 if isinstance(self.right, int):
                     dim_size = left_shape[0] if left_shape else 0
                     if self.right < -dim_size or self.right >= dim_size:
-                        raise IndexError(f"index {self.right} is out of bounds for axis 0 with size {dim_size}")
-                    return left_shape[1:] if len(left_shape) > 1 else (1,)
+                        raise IndexError(
+                            f"index {self.right} is out of bounds for axis 0 with size {dim_size}"
+                        )
+                    return left_shape[1:] if len(left_shape) > 1 else ()  # Scalar
                 else:
                     dim_size = left_shape[0] if left_shape else 0
                     start = 0 if self.right.start is None else self.right.start
@@ -378,15 +460,21 @@ class Expr(BaseExpr):
                     # Clamp to valid range
                     start = min(start, dim_size)
                     stop = min(stop, dim_size)
-                    slice_len = max(0, (stop - start + step - 1) // step) if step > 0 else max(0, (start - stop - step - 1) // (-step))
+                    slice_len = (
+                        max(0, (stop - start + step - 1) // step)
+                        if step > 0
+                        else max(0, (start - stop - step - 1) // (-step))
+                    )
                     return (slice_len,) + left_shape[1:]
             else:
                 raise ValueError(f"Unsupported index type: {type(self.right)}")
 
         elif self.op == "transpose":
             return left_shape[::-1]
-        
+
         elif self.op == "flatten":
             return (np.prod(left_shape),)
-        
-        raise NotImplementedError(f"Shape inference for operation {self.op} is not implemented")
+
+        raise NotImplementedError(
+            f"Shape inference for operation {self.op} is not implemented"
+        )

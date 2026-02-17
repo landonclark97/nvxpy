@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import time
 import warnings
-from typing import Dict, List
+from typing import Dict
 
-import autograd.numpy as np  # type: ignore
-from autograd import grad, jacobian, hessian  # type: ignore
-from scipy.optimize import minimize  # type: ignore
+import autograd.numpy as np
+from autograd import grad, jacobian, hessian
+from scipy.optimize import minimize
 
-from ..parser import eval_expression
-from ..compiler import compile_to_function
 from .base import (
-    build_objective,
     uses_projection,
-    ConstraintData,
+    downgrade_for_projection,
+    wrap_projection_constraint,
+    SCIPY_STATUS_MAP,
     ProblemData,
     SolverResult,
     SolverStats,
@@ -43,7 +42,6 @@ class ScipyBackend:
         "trust-constr",
     }
 
-    # Methods that use gradient information (jac parameter)
     GRADIENT_METHODS = {
         "CG",
         "BFGS",
@@ -58,7 +56,6 @@ class ScipyBackend:
         "trust-constr",
     }
 
-    # Methods that use Hessian information
     HESSIAN_METHODS = {
         "Newton-CG",
         "dogleg",
@@ -67,7 +64,6 @@ class ScipyBackend:
         "trust-exact",
     }
 
-    # Methods that support constraints
     CONSTRAINED_METHODS = {
         "SLSQP",
         "COBYLA",
@@ -86,23 +82,44 @@ class ScipyBackend:
             raise ValueError(f"Solver '{method}' is not supported by the SciPy backend")
 
         if problem_data.integer_vars:
-            raise ValueError("SciPy backend does not support integer decision variables")
+            raise ValueError(
+                "SciPy backend does not support integer decision variables"
+            )
 
         x0 = np.asarray(problem_data.x0, dtype=float)
         setup_time = problem_data.setup_time
         solve_time = 0.0
 
-        obj_func = build_objective(problem_data)
+        obj_func = problem_data.objective_fn
         gradient = grad(obj_func)
         uses_hessian = method in self.HESSIAN_METHODS
         hess_func = hessian(obj_func) if uses_hessian else None
 
-        compile_start = time.time()
-        constraint_data = self._build_constraint_data(
-            problem_data, for_projection=False
-        )
-        setup_time += time.time() - compile_start
-        cons = [self._to_scipy_constraint(c) for c in constraint_data]
+        # Build scipy constraint dicts from ConstraintFn objects
+        # For projection constraints (<-), apply p_tol so the constraint becomes
+        # p_tol - ||x - proj(x)|| >= 0, i.e., ||x - proj(x)|| <= p_tol
+        cons = []
+        for c in problem_data.constraint_fns:
+            if c.op == "<-":
+                # Wrap projection constraint to apply tolerance
+                wrapped_fun = wrap_projection_constraint(
+                    c, problem_data.projection_tolerance
+                )
+                cons.append(
+                    {
+                        "type": "ineq",  # p_tol - norm >= 0
+                        "fun": wrapped_fun,
+                        "jac": jacobian(wrapped_fun),
+                    }
+                )
+            else:
+                cons.append(
+                    {
+                        "type": c.type,
+                        "fun": c.fun,
+                        "jac": jacobian(c.fun),
+                    }
+                )
 
         def dummy_func(_):
             return 0.0
@@ -136,7 +153,6 @@ class ScipyBackend:
         start_time = time.time()
         options = dict(solver_options)
 
-        # Default trust region parameters for dogleg
         if method == "dogleg":
             options.setdefault("initial_trust_radius", 0.1)
             options.setdefault("max_trust_radius", 1.0)
@@ -157,12 +173,17 @@ class ScipyBackend:
 
         projection_result = None
         if uses_projection(problem_data):
-            compile_start = time.time()
-            projection_data = self._build_constraint_data(
-                problem_data, for_projection=True
-            )
-            setup_time += time.time() - compile_start
-            proj_cons = [self._to_scipy_constraint(c) for c in projection_data]
+            # Build projection constraints (treat <- as equality)
+            proj_cons = []
+            for c in problem_data.constraint_fns:
+                con_type = "eq" if c.op == "<-" else c.type
+                proj_cons.append(
+                    {
+                        "type": con_type,
+                        "fun": c.fun,
+                        "jac": jacobian(c.fun),
+                    }
+                )
 
             if proj_cons:
                 proj_options = dict(solver_options)
@@ -209,110 +230,14 @@ class ScipyBackend:
         )
 
     @staticmethod
-    def _build_constraint_data(
-        problem_data: ProblemData, for_projection: bool
-    ) -> List[ConstraintData]:
-        constraints: List[ConstraintData] = []
-        p_tol = problem_data.projection_tolerance
-        use_compile = problem_data.compile
-
-        for constraint in problem_data.constraints:
-
-            def make_con_fun(c, compile_exprs=use_compile):
-                if compile_exprs:
-                    # Pre-compile constraint expressions
-                    compiled_left = compile_to_function(c.left)
-                    compiled_right = compile_to_function(c.right)
-
-                    def con_fun(x):
-                        var_dict = problem_data.unpack(x)
-                        lval = compiled_left(var_dict)
-                        rval = compiled_right(var_dict)
-                        if c.op == "<-":
-                            if for_projection:
-                                res = lval - rval
-                            else:
-                                res = p_tol - np.linalg.norm(
-                                    np.atleast_2d(lval - rval), ord="fro"
-                                )
-                        else:
-                            res = (
-                                lval - rval
-                                if c.op in [">=", "==", ">>"]
-                                else rval - lval
-                            )
-                        if c.op in [">>", "<<"]:
-                            res = np.real(np.ravel(np.linalg.eig(res)[0]))
-                        return np.ravel(res)
-                else:
-                    def con_fun(x):
-                        var_dict = problem_data.unpack(x)
-                        lval = eval_expression(c.left, var_dict)
-                        rval = eval_expression(c.right, var_dict)
-                        if c.op == "<-":
-                            if for_projection:
-                                res = lval - rval
-                            else:
-                                res = p_tol - np.linalg.norm(
-                                    np.atleast_2d(lval - rval), ord="fro"
-                                )
-                        else:
-                            res = (
-                                lval - rval
-                                if c.op in [">=", "==", ">>"]
-                                else rval - lval
-                            )
-                        if c.op in [">>", "<<"]:
-                            res = np.real(np.ravel(np.linalg.eig(res)[0]))
-                        return np.ravel(res)
-
-                return con_fun
-
-            con_fun = make_con_fun(constraint)
-            con_jac = jacobian(con_fun)
-            constraint_type = (
-                "eq"
-                if (constraint.op == "==" or (for_projection and constraint.op == "<-"))
-                else "ineq"
-            )
-            constraints.append(
-                ConstraintData(
-                    type=constraint_type,
-                    fun=con_fun,
-                    jac=con_jac,
-                    op=constraint.op,
-                )
-            )
-
-        return constraints
-
-    @staticmethod
-    def _to_scipy_constraint(constraint: ConstraintData) -> Dict[str, object]:
-        return {"type": constraint.type, "fun": constraint.fun, "jac": constraint.jac}
-
-    @staticmethod
     def _interpret_status(result, projection_result) -> SolverStatus:
         status_code = getattr(result, "status", None)
         success = bool(getattr(result, "success", False))
 
         if success:
-            if projection_result is not None and not getattr(
-                projection_result, "success", True
-            ):
-                return SolverStatus.SUBOPTIMAL
-            return SolverStatus.OPTIMAL
-
-        status_map = {
-            0: SolverStatus.OPTIMAL,
-            1: SolverStatus.MAX_ITERATIONS,
-            2: SolverStatus.INFEASIBLE,
-            3: SolverStatus.UNBOUNDED,
-            4: SolverStatus.NUMERICAL_ERROR,
-        }
+            return downgrade_for_projection(SolverStatus.OPTIMAL, projection_result)
 
         if status_code is None:
             return SolverStatus.UNKNOWN
 
-        return status_map.get(status_code, SolverStatus.ERROR)
-
-
+        return SCIPY_STATUS_MAP.get(status_code, SolverStatus.ERROR)

@@ -1,4 +1,5 @@
 """Tests for expression.py - operations, shapes, and curvature."""
+
 import autograd.numpy as np
 import pytest
 import nvxpy as nvx
@@ -117,7 +118,7 @@ class TestExprOperations:
         x = Variable(shape=(5,), name="x")
         expr = x[2]
         assert expr.op == "getitem"
-        assert expr.shape == (1,)
+        assert expr.shape == ()  # Scalar, consistent with NumPy
 
     def test_getitem_slice(self):
         x = Variable(shape=(5,), name="x")
@@ -141,9 +142,55 @@ class TestExprOperations:
         assert cons.op == "<<"
 
     def test_xor_discrete_set(self):
-        x = Variable(shape=(2,), name="x")
+        # Scalar variable with scalar discrete values
+        x = Variable(shape=(1,), name="x")
         cons = x ^ [1, 2, 3]
         assert cons.op == "in"
+
+    def test_xor_discrete_set_nd(self):
+        # 2D variable with 2D discrete points
+        x = Variable(shape=(2,), name="x")
+        cons = x ^ [[1, 2], [3, 4], [5, 6]]
+        assert cons.op == "in"
+
+    def test_getitem_ellipsis_2d_last(self):
+        """Test ellipsis indexing on 2D: x[..., 0] -> select column"""
+        X = Variable(shape=(3, 4), name="X")
+        expr = X[..., 0]
+        assert expr.shape == (3,)
+
+    def test_getitem_ellipsis_2d_first(self):
+        """Test ellipsis indexing on 2D: x[0, ...] -> select row"""
+        X = Variable(shape=(3, 4), name="X")
+        expr = X[0, ...]
+        assert expr.shape == (4,)
+
+    def test_getitem_ellipsis_2d_all(self):
+        """Test ellipsis that covers all dimensions: x[...]"""
+        X = Variable(shape=(3, 4), name="X")
+        expr = X[...]
+        assert expr.shape == (3, 4)
+
+    def test_getitem_ellipsis_2d_with_slice(self):
+        """Test ellipsis with slices: x[..., 1:3]"""
+        X = Variable(shape=(3, 4), name="X")
+        expr = X[..., 1:3]
+        assert expr.shape == (3, 2)
+
+    def test_getitem_ellipsis_1d(self):
+        """Test ellipsis on 1D: x[...] should preserve shape"""
+        x = Variable(shape=(5,), name="x")
+        expr = x[...]
+        assert expr.shape == (5,)
+
+    def test_getitem_ellipsis_1d_with_int(self):
+        """Test ellipsis with int on 1D: x[..., 0] -> scalar"""
+        x = Variable(shape=(5,), name="x")
+        # x[..., 0] is equivalent to x[0] for 1D
+        # but expressed as tuple indexing
+        expr = x[..., 0]
+        # The ellipsis covers 0 dims, leaving just the int index
+        assert expr.shape == ()
 
 
 class TestExprCurvature:
@@ -162,7 +209,7 @@ class TestExprCurvature:
 
     def test_add_convex_convex(self):
         x = Variable(shape=(2,), name="x")
-        expr = x ** 2 + x ** 2
+        expr = x**2 + x**2
         assert expr.curvature == nvx.CONVEX
 
     def test_sub_affine_affine(self):
@@ -183,7 +230,7 @@ class TestExprCurvature:
 
     def test_mul_negative_convex(self):
         x = Variable(shape=(2,), name="x")
-        expr = -1 * (x ** 2)
+        expr = -1 * (x**2)
         assert expr.curvature == nvx.CONCAVE
 
     def test_div_positive_constant(self):
@@ -198,12 +245,12 @@ class TestExprCurvature:
 
     def test_pow_squared(self):
         x = Variable(shape=(2,), name="x")
-        expr = x ** 2
+        expr = x**2
         assert expr.curvature == nvx.CONVEX
 
     def test_pow_one(self):
         x = Variable(shape=(2,), name="x")
-        expr = x ** 1
+        expr = x**1
         assert expr.curvature == nvx.AFFINE
 
     def test_neg(self):
@@ -213,7 +260,7 @@ class TestExprCurvature:
 
     def test_neg_convex(self):
         x = Variable(shape=(2,), name="x")
-        expr = -(x ** 2)
+        expr = -(x**2)
         assert expr.curvature == nvx.CONCAVE
 
     def test_matmul_affine_constant(self):
@@ -269,7 +316,7 @@ class TestExprShape:
 
     def test_pow_shape(self):
         x = Variable(shape=(2, 3), name="x")
-        expr = x ** 2
+        expr = x**2
         assert expr.shape == (2, 3)
 
     def test_neg_shape(self):

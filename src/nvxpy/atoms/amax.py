@@ -42,11 +42,15 @@ class amax(Expr):
     def shape(self) -> tuple[int, ...]:
         if self.axis is None:
             return (1,)
-        arg_shape = self.left.shape if isinstance(self.left, BaseExpr) else np.shape(self.left)
+        arg_shape = (
+            self.left.shape if isinstance(self.left, BaseExpr) else np.shape(self.left)
+        )
         ndim = len(arg_shape)
         axis = self.axis if self.axis >= 0 else ndim + self.axis
         if axis < 0 or axis >= ndim:
-            raise ValueError(f"axis {self.axis} is out of bounds for array of dimension {ndim}")
+            raise ValueError(
+                f"axis {self.axis} is out of bounds for array of dimension {ndim}"
+            )
         result = list(arg_shape)
         result.pop(axis)
         return tuple(result) if result else (1,)

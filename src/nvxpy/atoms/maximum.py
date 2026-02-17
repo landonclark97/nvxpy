@@ -50,6 +50,12 @@ class maximum(Expr):
 
     @property
     def shape(self) -> tuple[int, ...]:
-        left_shape = self.left.shape if isinstance(self.left, BaseExpr) else np.shape(self.left)
-        right_shape = self.right.shape if isinstance(self.right, BaseExpr) else np.shape(self.right)
+        left_shape = (
+            self.left.shape if isinstance(self.left, BaseExpr) else np.shape(self.left)
+        )
+        right_shape = (
+            self.right.shape
+            if isinstance(self.right, BaseExpr)
+            else np.shape(self.right)
+        )
         return broadcast_shapes(left_shape, right_shape)

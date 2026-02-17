@@ -108,7 +108,7 @@ for i in range(num_runs):
     numpy_times.append(numpy_time)
 
     print(
-        f"Run {i+1:2d}/{num_runs} - "
+        f"Run {i + 1:2d}/{num_runs} - "
         f"Interpreted: {interp_time:.4f}s, "
         f"Compiled: {compiled_time:.4f}s, "
         f"NumPy: {numpy_time:.4f}s"
@@ -135,4 +135,6 @@ print(f"Compiled vs NumPy overhead:      {avg_compiled / avg_numpy:.2f}x")
 print(f"Compiled efficiency:             {avg_numpy / avg_compiled * 100:.1f}%")
 print()
 print(f"Results match (interp vs numpy):    {np.allclose(interp_result, numpy_result)}")
-print(f"Results match (compiled vs numpy):  {np.allclose(compiled_result, numpy_result)}")
+print(
+    f"Results match (compiled vs numpy):  {np.allclose(compiled_result, numpy_result)}"
+)

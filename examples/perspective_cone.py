@@ -35,7 +35,7 @@ for idx in range(4):
 
 # nonsense optimization problem ¯\_(ツ)_/¯
 obj = 0.0
-for (ti, tj) in itertools.combinations(Ts, 2):
+for ti, tj in itertools.combinations(Ts, 2):
     obj += ti - tj
 
 cons = []
@@ -50,8 +50,8 @@ prob = nvx.Problem(nvx.Maximize(obj), cons)
 prob.solve(solver=nvx.SLSQP)
 
 print(prob.solver_stats)
-print(f'solved successfully? {prob.status == 0}')
-print(f'Ts: {[t.value for t in Ts]}')
-print(f'Ps: {[p.value for p in Ps]}')
-print(f'Xd: {[x.value for x in Xd]}')
-print(f'final objective: {obj.value}')
+print(f"solved successfully? {prob.status}")
+print(f"Ts: {[t.value for t in Ts]}")
+print(f"Ps: {[p.value for p in Ps]}")
+print(f"Xd: {[x.value for x in Xd]}")
+print(f"final objective: {obj.value}")

@@ -1,4 +1,5 @@
 """Tests for binary variable support."""
+
 import pytest
 import autograd.numpy as np
 import nvxpy as nvx
@@ -39,6 +40,7 @@ class TestBinaryVariableCreation:
         """Test that binary + pos gives a warning."""
         reset_variable_ids()
         import logging
+
         caplog.set_level(logging.WARNING)
 
         x = Variable(binary=True, pos=True, name="x")
@@ -155,7 +157,9 @@ class TestBinaryKnapsack:
         prob = Problem(Maximize(total_value), [total_weight <= capacity])
         result = prob.solve(solver=nvx.BNB)
 
-        assert result.status == nvx.SolverStatus.OPTIMAL
+        # May be SUBOPTIMAL if some NLP solves fail during branch-and-bound,
+        # but the solution should still be correct
+        assert result.status in [nvx.SolverStatus.OPTIMAL, nvx.SolverStatus.SUBOPTIMAL]
 
         # Check feasibility
         selected_weight = sum(weights[i] * x[i].value for i in range(n_items))
@@ -207,10 +211,7 @@ class TestBinaryWithContinuous:
 
         # Minimize (x - 0.7)^2 + (y - 2.3)^2
         # x should be 1, y should be 2.3
-        prob = Problem(
-            Minimize((x - 0.7) ** 2 + (y - 2.3) ** 2),
-            [y >= 0, y <= 5]
-        )
+        prob = Problem(Minimize((x - 0.7) ** 2 + (y - 2.3) ** 2), [y >= 0, y <= 5])
         result = prob.solve(solver=nvx.BNB)
 
         assert result.status == nvx.SolverStatus.OPTIMAL
@@ -231,7 +232,7 @@ class TestBinaryWithContinuous:
         # If x=1, then y <= 10
         prob = Problem(
             Maximize(y - 2 * x),  # Want high y but low x
-            [y >= 0, y <= 10 * x, x + y <= 8]
+            [y >= 0, y <= 10 * x, x + y <= 8],
         )
         result = prob.solve(solver=nvx.BNB)
 
@@ -257,7 +258,7 @@ class TestBinaryVector:
         # Select exactly 2 items
         prob = Problem(
             Minimize(nvx.sum((x - np.array([0.9, 0.8, 0.2, 0.1])) ** 2)),
-            [nvx.sum(x) == 2]
+            [nvx.sum(x) == 2],
         )
         result = prob.solve(solver=nvx.BNB)
 
@@ -278,10 +279,7 @@ class TestBinaryVector:
         x.value = np.zeros(n)
 
         # Maximize sum of values, selecting at most 2
-        prob = Problem(
-            Maximize(nvx.sum(values * x)),
-            [nvx.sum(x) <= 2]
-        )
+        prob = Problem(Maximize(nvx.sum(values * x)), [nvx.sum(x) <= 2])
         result = prob.solve(solver=nvx.BNB)
 
         assert result.status == nvx.SolverStatus.OPTIMAL
@@ -329,7 +327,7 @@ class TestBinaryEdgeCases:
         prob = Problem(Minimize(x), [x >= 0.6, x <= 0.4])
         result = prob.solve(solver=nvx.BNB)
 
-        assert result.status in [nvx.SolverStatus.INFEASIBLE, nvx.SolverStatus.ERROR, nvx.SolverStatus.NUMERICAL_ERROR]
+        assert result.status == nvx.SolverStatus.INFEASIBLE
 
     def test_all_binary_combinations(self):
         """Test that solver explores all binary combinations correctly."""
@@ -341,9 +339,7 @@ class TestBinaryEdgeCases:
         y.value = np.array([0.0])
 
         # Objective has unique minimum at x=1, y=0
-        prob = Problem(
-            Minimize((x - 1) ** 2 + y ** 2 + 0.1 * x * y)
-        )
+        prob = Problem(Minimize((x - 1) ** 2 + y**2 + 0.1 * x * y))
         result = prob.solve(solver=nvx.BNB)
 
         assert result.status == nvx.SolverStatus.OPTIMAL

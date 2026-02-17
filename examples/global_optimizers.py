@@ -35,7 +35,7 @@ def differential_evolution_constrained():
         nvx.sum(x**2) <= 4.0,  # keeps search inside radius 2
     ]
 
-    prob = nvx.Problem(nvx.Minimize(objective), constraints)
+    prob = nvx.Problem(nvx.Minimize(objective), constraints, compile=True)
     result = prob.solve(
         solver=nvx.DIFF_EVOLUTION,
         solver_options={
@@ -43,7 +43,6 @@ def differential_evolution_constrained():
             "popsize": 20,
             "seed": 0,
         },
-        compile=True,
     )
 
     print(f"  status: {result.status}")
@@ -64,11 +63,10 @@ def dual_annealing_unconstrained():
     objective = (x - 2) ** 2 * (x + 2) ** 2 + nvx.sin(5 * x)
 
     # dual_annealing requires finite bounds
-    prob = nvx.Problem(nvx.Minimize(objective), [x >= -6, x <= 6])
+    prob = nvx.Problem(nvx.Minimize(objective), [x >= -6, x <= 6], compile=True)
     result = prob.solve(
         solver=nvx.DUAL_ANNEALING,
         solver_options={"seed": 0},
-        compile=True,
     )
 
     print(f"  status: {result.status}")
@@ -95,11 +93,10 @@ def shgo_constrained():
         nvx.sum(x**2) <= 3,  # disk of radius sqrt(3) ≈ 1.73
     ]
 
-    prob = nvx.Problem(nvx.Minimize(objective), constraints)
+    prob = nvx.Problem(nvx.Minimize(objective), constraints, compile=True)
     result = prob.solve(
         solver=nvx.SHGO,
         solver_options={"n": 100, "iters": 3},
-        compile=True,
     )
 
     print(f"  status: {result.status}")
@@ -122,13 +119,14 @@ def basinhopping_unconstrained():
     sum_sq = nvx.sum(x**2)
     sum_cos = nvx.sum(nvx.cos(c * x))
     n = 2
-    objective = -a * nvx.exp(-b * nvx.sqrt(sum_sq / n)) - nvx.exp(sum_cos / n) + a + np.e
+    objective = (
+        -a * nvx.exp(-b * nvx.sqrt(sum_sq / n)) - nvx.exp(sum_cos / n) + a + np.e
+    )
 
-    prob = nvx.Problem(nvx.Minimize(objective))
+    prob = nvx.Problem(nvx.Minimize(objective), compile=True)
     result = prob.solve(
         solver=nvx.BASINHOPPING,
         solver_options={"niter": 50, "seed": 42},
-        compile=True,
     )
 
     print(f"  status: {result.status}")
@@ -153,11 +151,10 @@ def basinhopping_with_bounds():
     # Add bounds - basinhopping will use L-BFGS-B when bounds are present
     constraints = [x >= -5, x <= 5]
 
-    prob = nvx.Problem(nvx.Minimize(objective), constraints)
+    prob = nvx.Problem(nvx.Minimize(objective), constraints, compile=True)
     result = prob.solve(
         solver=nvx.BASINHOPPING,
         solver_options={"niter": 20, "seed": 123},
-        compile=True,
     )
 
     print(f"  status: {result.status}")
@@ -183,8 +180,8 @@ def compare_solvers():
 
         constraints = [x >= -100, x <= 100]
 
-        prob = nvx.Problem(nvx.Minimize(objective), constraints)
-        result = prob.solve(solver=solver_enum, solver_options=opts, compile=True)
+        prob = nvx.Problem(nvx.Minimize(objective), constraints, compile=True)
+        result = prob.solve(solver=solver_enum, solver_options=opts)
 
         obj_val = np.asarray(objective.value).item()
         return result.status, x.value, obj_val
@@ -205,7 +202,7 @@ def compare_solvers():
 
     # Print comparison
     print(f"  {'Solver':<25} {'Status':<12} {'Objective':>12}")
-    print(f"  {'-'*25} {'-'*12} {'-'*12}")
+    print(f"  {'-' * 25} {'-' * 12} {'-' * 12}")
     for name, (status, x_opt, f_opt) in results.items():
         print(f"  {name:<25} {status:<12} {f_opt:>12.4f}")
     print()

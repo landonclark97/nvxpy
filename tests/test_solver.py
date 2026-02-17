@@ -77,8 +77,8 @@ def test_non_convex_constraints():
 
 
 def test_maximize_and_presolve():
-    X = Variable((4,4))
-    X.value = np.arange(16).reshape(4,4)
+    X = Variable((4, 4))
+    X.value = np.arange(16).reshape(4, 4)
 
     obj = nvx.norm(X - np.eye(4), ord="fro")
     cons = [
@@ -175,8 +175,8 @@ def test_ipopt_with_compile():
     objective = Minimize((x[0] - 1) ** 2 + (x[1] - 2) ** 2)
     constraints = [x[0] + x[1] >= 0]
 
-    problem = Problem(objective, constraints)
-    result = problem.solve(solver=nvx.IPOPT, compile=True)
+    problem = Problem(objective, constraints, compile=True)
+    result = problem.solve(solver=nvx.IPOPT)
 
     assert result.status == nvx.SolverStatus.OPTIMAL
     assert np.allclose(x.value, np.array([1.0, 2.0]), atol=1e-3)
@@ -255,7 +255,7 @@ def test_solver_result_stats():
     # Check stats exist
     assert result.stats is not None
     assert result.stats.solver_name is not None
-    assert result.stats.solve_time is not None or result.stats.solve_time >= 0
+    assert result.stats.solve_time is not None and result.stats.solve_time >= 0
 
 
 def test_problem_with_compile():
@@ -266,8 +266,8 @@ def test_problem_with_compile():
     objective = Minimize((x[0] - 1) ** 2 + (x[1] - 2) ** 2)
     constraints = [x[0] + x[1] >= 0]
 
-    problem = Problem(objective, constraints)
-    result = problem.solve(compile=True)
+    problem = Problem(objective, constraints, compile=True)
+    result = problem.solve()
 
     assert result.status == nvx.SolverStatus.OPTIMAL
     assert np.allclose(x.value, np.array([1.0, 2.0]), atol=1e-3)
@@ -302,7 +302,9 @@ def test_ipopt_status_interpretation():
     assert backend._interpret_status({"status": -10}) == nvx.SolverStatus.ERROR
     assert backend._interpret_status({"status": -11}) == nvx.SolverStatus.ERROR
     assert backend._interpret_status({"status": -12}) == nvx.SolverStatus.ERROR
-    assert backend._interpret_status({"status": -13}) == nvx.SolverStatus.NUMERICAL_ERROR
+    assert (
+        backend._interpret_status({"status": -13}) == nvx.SolverStatus.NUMERICAL_ERROR
+    )
     assert backend._interpret_status({"status": -999}) == nvx.SolverStatus.UNKNOWN
 
 
@@ -385,10 +387,11 @@ def test_default_solver_integer():
 
 def test_default_solver_discrete_set():
     """Test default solver selection for DiscreteSet constraint (BNB)."""
-    x = Variable(shape=(2,), name="x")
-    x.value = np.array([0.0, 0.0])
+    # Scalar variable with scalar discrete values
+    x = Variable(shape=(1,), name="x")
+    x.value = np.array([0.0])
 
-    objective = Minimize((x[0] - 1.2) ** 2 + (x[1] - 2.7) ** 2)
+    objective = Minimize((x - 1.7) ** 2)
     # DiscreteSet constraint without integer=True on variable
     constraints = [x ^ [0, 1, 2, 3, 4, 5]]
 
@@ -397,7 +400,25 @@ def test_default_solver_discrete_set():
 
     assert result.status == nvx.SolverStatus.OPTIMAL
     assert "B&B" in result.stats.solver_name
-    # Should snap to nearest discrete values: 1 and 3
+    # Should snap to nearest discrete value: 2
+    assert np.isclose(x.value, 2.0).all()
+
+
+def test_discrete_set_nd_points():
+    """Test DiscreteSet with n-dimensional points."""
+    x = Variable(shape=(2,), name="x")
+    x.value = np.array([0.0, 0.0])
+
+    # x can be one of these 2D points: [0,0], [1,3], [3,1], [2,2]
+    objective = Minimize((x[0] - 1.2) ** 2 + (x[1] - 2.7) ** 2)
+    constraints = [x ^ [[0, 0], [1, 3], [3, 1], [2, 2]]]
+
+    problem = Problem(objective, constraints)
+    result = problem.solve()
+
+    assert result.status == nvx.SolverStatus.OPTIMAL
+    # Closest point to (1.2, 2.7) is [1, 3] with distance sqrt(0.04 + 0.09) = 0.36
+    # vs [2,2] with distance sqrt(0.64 + 0.49) = 1.06
     assert np.allclose(x.value, np.array([1.0, 3.0]), atol=1e-3)
 
 
@@ -470,8 +491,7 @@ def test_ipopt_projection_constraint():
 
     # Target rotation (45 degrees)
     theta = np.pi / 4
-    target = np.array([[np.cos(theta), -np.sin(theta)],
-                       [np.sin(theta), np.cos(theta)]])
+    target = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
 
     objective = Minimize(nvx.norm(R - target, ord="fro"))
     constraints = [R ^ SO(2)]  # R must be in SO(2)
@@ -490,6 +510,7 @@ def test_ipopt_projection_constraint():
 # =============================================================================
 # Tests for new scipy solvers
 # =============================================================================
+
 
 class TestGradientFreeSolvers:
     """Tests for gradient-free scipy solvers."""
@@ -604,7 +625,7 @@ class TestHessianBasedSolvers:
         problem = Problem(objective, [])
         result = problem.solve(
             solver=nvx.DOGLEG,
-            solver_options={"initial_trust_radius": 0.5, "max_trust_radius": 2.0}
+            solver_options={"initial_trust_radius": 0.5, "max_trust_radius": 2.0},
         )
 
         assert result.status == nvx.SolverStatus.OPTIMAL

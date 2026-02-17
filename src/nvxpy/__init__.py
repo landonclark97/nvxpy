@@ -31,6 +31,7 @@ __all__ = [
     "BASINHOPPING",
     # Other
     "IPOPT",
+    "KNITRO",
     "BNB",
     "CONSTANT",
     "AFFINE",
@@ -101,6 +102,7 @@ BASINHOPPING = Solver.BASINHOPPING
 
 # Other
 IPOPT = Solver.IPOPT
+KNITRO = Solver.KNITRO
 BNB = Solver.BNB
 
 CONSTANT = Curvature.CONSTANT
@@ -109,7 +111,22 @@ CONVEX = Curvature.CONVEX
 CONCAVE = Curvature.CONCAVE
 UNKNOWN = Curvature.UNKNOWN
 
-from .atoms import det, norm, sum, trace, maximum, minimum, amin, amax, abs, log, exp, sqrt, logdet, PolarDecomposition
+from .atoms import (
+    det,
+    norm,
+    sum,
+    trace,
+    maximum,
+    minimum,
+    amin,
+    amax,
+    abs,
+    log,
+    exp,
+    sqrt,
+    logdet,
+    PolarDecomposition,
+)
 from .atoms import sin, cos
 from .constructs import Function, function, Graph, DiGraph
 from .sets import SO, PerspectiveCone, DiscreteSet, DiscreteRanges

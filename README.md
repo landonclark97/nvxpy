@@ -149,6 +149,16 @@ Options:
 - `jac=callable` - User-provided Jacobian function
 
 
+### Compilation
+
+Pass `compile=True` to `Problem` to compile expression trees into generated Python code, avoiding interpreter overhead on each evaluation:
+
+```python
+prob = nvx.Problem(nvx.Minimize(obj), constraints, compile=True)
+prob.solve(solver=nvx.SLSQP)
+```
+
+
 ## Available Solvers
 
 ### Gradient-Free

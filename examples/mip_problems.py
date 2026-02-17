@@ -21,6 +21,7 @@ from nvxpy import Variable, Problem, Minimize, Maximize, BNB, Graph, DiGraph
 # Knapsack Problem
 # =============================================================================
 
+
 def knapsack_problem():
     """
     0/1 Knapsack Problem
@@ -42,9 +43,9 @@ def knapsack_problem():
 
     # Problem data
     items = ["Gold Bar", "Silver Coins", "Diamond", "Painting", "Watch"]
-    values = [10, 6, 14, 7, 3]    # Value of each item
-    weights = [5, 3, 7, 4, 2]     # Weight of each item
-    capacity = 15                  # Knapsack capacity
+    values = [10, 6, 14, 7, 3]  # Value of each item
+    weights = [5, 3, 7, 4, 2]  # Weight of each item
+    capacity = 15  # Knapsack capacity
 
     n = len(items)
     nvx.reset_variable_ids()
@@ -65,7 +66,7 @@ def knapsack_problem():
         [
             total_weight <= capacity,
             *[xi ^ [0, 1] for xi in x],  # Binary constraints
-        ]
+        ],
     )
 
     result = problem.solve(solver=BNB)
@@ -97,6 +98,7 @@ def knapsack_problem():
 # Maximum Independent Set
 # =============================================================================
 
+
 def maximum_independent_set():
     """
     Maximum Independent Set Problem
@@ -122,15 +124,17 @@ def maximum_independent_set():
     people = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank"]
     nxg = nx.Graph()
     nxg.add_nodes_from(range(len(people)))
-    nxg.add_edges_from([
-        (0, 1),  # Alice knows Bob
-        (0, 2),  # Alice knows Carol
-        (1, 2),  # Bob knows Carol
-        (1, 3),  # Bob knows Dave
-        (2, 4),  # Carol knows Eve
-        (3, 4),  # Dave knows Eve
-        (4, 5),  # Eve knows Frank
-    ])
+    nxg.add_edges_from(
+        [
+            (0, 1),  # Alice knows Bob
+            (0, 2),  # Alice knows Carol
+            (1, 2),  # Bob knows Carol
+            (1, 3),  # Bob knows Dave
+            (2, 4),  # Carol knows Eve
+            (3, 4),  # Dave knows Eve
+            (4, 5),  # Eve knows Frank
+        ]
+    )
 
     nvx.reset_variable_ids()
 
@@ -151,7 +155,7 @@ def maximum_independent_set():
     result = problem.solve(solver=BNB)
 
     print("\nSocial network connections:")
-    for (i, j) in G.edges:
+    for i, j in G.edges:
         print(f"  {people[i]} -- {people[j]}")
 
     print("\nMaximum independent set (strangers who can form a focus group):")
@@ -166,6 +170,7 @@ def maximum_independent_set():
 # =============================================================================
 # Minimum Vertex Cover
 # =============================================================================
+
 
 def minimum_vertex_cover():
     """
@@ -192,14 +197,16 @@ def minimum_vertex_cover():
     intersections = ["A", "B", "C", "D", "E"]
     nxg = nx.Graph()
     nxg.add_nodes_from(range(len(intersections)))
-    nxg.add_edges_from([
-        (0, 1),  # Road A-B
-        (0, 2),  # Road A-C
-        (1, 2),  # Road B-C
-        (1, 3),  # Road B-D
-        (2, 3),  # Road C-D
-        (3, 4),  # Road D-E
-    ])
+    nxg.add_edges_from(
+        [
+            (0, 1),  # Road A-B
+            (0, 2),  # Road A-C
+            (1, 2),  # Road B-C
+            (1, 3),  # Road B-D
+            (2, 3),  # Road C-D
+            (3, 4),  # Road D-E
+        ]
+    )
 
     nvx.reset_variable_ids()
 
@@ -213,7 +220,7 @@ def minimum_vertex_cover():
     # Constraints: every road must be covered by at least one camera
     # For vertex cover: y[i] + y[j] >= 1 for all edges (i, j)
     constraints = []
-    for (i, j) in G.edges:
+    for i, j in G.edges:
         constraints.append(y[i] + y[j] >= 1)
 
     for var in y.values():
@@ -223,7 +230,7 @@ def minimum_vertex_cover():
     result = problem.solve(solver=BNB)
 
     print("\nRoad network:")
-    for (i, j) in G.edges:
+    for i, j in G.edges:
         print(f"  {intersections[i]} -- {intersections[j]}")
 
     print("\nOptimal camera placement:")
@@ -238,6 +245,7 @@ def minimum_vertex_cover():
 # =============================================================================
 # Set Cover Problem
 # =============================================================================
+
 
 def set_cover_problem():
     """
@@ -263,11 +271,11 @@ def set_cover_problem():
 
     # Possible fire station locations and which neighborhoods they cover
     stations = {
-        "Station_Central": [0, 1, 2],        # Covers Downtown, Uptown, Riverside
-        "Station_North": [1, 3],             # Covers Uptown, Hills
-        "Station_East": [2, 4, 5],           # Covers Riverside, Garden, Industrial
-        "Station_West": [0, 3, 4],           # Covers Downtown, Hills, Garden
-        "Station_South": [4, 5],             # Covers Garden, Industrial
+        "Station_Central": [0, 1, 2],  # Covers Downtown, Uptown, Riverside
+        "Station_North": [1, 3],  # Covers Uptown, Hills
+        "Station_East": [2, 4, 5],  # Covers Riverside, Garden, Industrial
+        "Station_West": [0, 3, 4],  # Covers Downtown, Hills, Garden
+        "Station_South": [4, 5],  # Covers Garden, Industrial
     }
 
     station_names = list(stations.keys())
@@ -277,7 +285,9 @@ def set_cover_problem():
     nvx.reset_variable_ids()
 
     # Decision variables: x[j] = 1 if we build station j
-    x = [Variable(integer=True, name=f"x_{station_names[j]}") for j in range(n_stations)]
+    x = [
+        Variable(integer=True, name=f"x_{station_names[j]}") for j in range(n_stations)
+    ]
     for var in x:
         var.value = 0.0
 
@@ -289,8 +299,7 @@ def set_cover_problem():
     for i in range(n_neighborhoods):
         # Sum of stations that cover neighborhood i must be >= 1
         covering_stations = sum(
-            x[j] for j in range(n_stations)
-            if i in stations[station_names[j]]
+            x[j] for j in range(n_stations) if i in stations[station_names[j]]
         )
         coverage_constraints.append(covering_stations >= 1)
 
@@ -299,7 +308,7 @@ def set_cover_problem():
         [
             *coverage_constraints,
             *[xi ^ [0, 1] for xi in x],
-        ]
+        ],
     )
 
     result = problem.solve(solver=BNB)
@@ -324,6 +333,7 @@ def set_cover_problem():
 # =============================================================================
 # Graph Coloring (Chromatic Number)
 # =============================================================================
+
 
 def graph_coloring():
     """
@@ -362,11 +372,16 @@ def graph_coloring():
     nvx.reset_variable_ids()
 
     # x[i][c] = 1 if course i is scheduled in slot c
-    x = [[Variable(integer=True, name=f"x_{courses[i]}_slot{c}")
-          for c in range(max_colors)] for i in range(n)]
+    x = [
+        [
+            Variable(binary=True, name=f"x_{courses[i]}_slot{c}")
+            for c in range(max_colors)
+        ]
+        for i in range(n)
+    ]
 
     # y[c] = 1 if slot c is used
-    y = [Variable(integer=True, name=f"y_slot{c}") for c in range(max_colors)]
+    y = [Variable(binary=True, name=f"y_slot{c}") for c in range(max_colors)]
 
     for i in range(n):
         for c in range(max_colors):
@@ -384,7 +399,7 @@ def graph_coloring():
         constraints.append(sum(x[i][c] for c in range(max_colors)) == 1)
 
     # Conflicting courses cannot share a slot
-    for (i, j) in conflicts:
+    for i, j in conflicts:
         for c in range(max_colors):
             constraints.append(x[i][c] + x[j][c] <= 1)
 
@@ -397,19 +412,12 @@ def graph_coloring():
     for c in range(max_colors - 1):
         constraints.append(y[c] >= y[c + 1])
 
-    # Binary constraints
-    for i in range(n):
-        for c in range(max_colors):
-            constraints.append(x[i][c] ^ [0, 1])
-    for c in range(max_colors):
-        constraints.append(y[c] ^ [0, 1])
-
     problem = Problem(Minimize(num_slots), constraints)
     result = problem.solve(solver=BNB)
 
     print(f"\nCourses: {', '.join(courses)}")
     print("\nConflicts (shared students):")
-    for (i, j) in conflicts:
+    for i, j in conflicts:
         print(f"  {courses[i]} -- {courses[j]}")
 
     print("\nOptimal exam schedule:")
@@ -429,6 +437,7 @@ def graph_coloring():
 # =============================================================================
 # Facility Location Problem
 # =============================================================================
+
 
 def facility_location():
     """
@@ -473,8 +482,13 @@ def facility_location():
     y = [Variable(integer=True, name=f"y_{warehouses[j]}") for j in range(n_warehouses)]
 
     # x[i][j] = 1 if store i is served by warehouse j
-    x = [[Variable(integer=True, name=f"x_{stores[i]}_{warehouses[j]}")
-          for j in range(n_warehouses)] for i in range(n_stores)]
+    x = [
+        [
+            Variable(integer=True, name=f"x_{stores[i]}_{warehouses[j]}")
+            for j in range(n_warehouses)
+        ]
+        for i in range(n_stores)
+    ]
 
     # Initial values
     for j in range(n_warehouses):
@@ -557,6 +571,7 @@ def facility_location():
 # Traveling Salesman Problem (Small Instance)
 # =============================================================================
 
+
 def traveling_salesman():
     """
     Traveling Salesman Problem (TSP)
@@ -587,7 +602,7 @@ def traveling_salesman():
 
     # Distance matrix
     def euclidean_dist(p1, p2):
-        return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+        return np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
     # Build complete directed graph with distances as weights
     nxg = nx.DiGraph()
@@ -611,10 +626,10 @@ def traveling_salesman():
         current = 0
         while len(visited) < n:
             best_next = None
-            best_dist = float('inf')
+            best_dist = float("inf")
             for j in range(n):
                 if j not in visited:
-                    dist = nxg[current][j]['weight']
+                    dist = nxg[current][j]["weight"]
                     if dist < best_dist:
                         best_dist = dist
                         best_next = j
@@ -663,11 +678,13 @@ def traveling_salesman():
     for var in x.values():
         constraints.extend(var.constraints)
 
-    problem = Problem(Minimize(total_distance), constraints)
-    result = problem.solve(solver=BNB, compile=True)
+    problem = Problem(Minimize(total_distance), constraints, compile=True)
+    result = problem.solve(solver=BNB)
 
     # Build distance matrix for display
-    distances = [[euclidean_dist(coords[i], coords[j]) for j in range(n)] for i in range(n)]
+    distances = [
+        [euclidean_dist(coords[i], coords[j]) for j in range(n)] for i in range(n)
+    ]
 
     print("\nCities and coordinates:")
     for i, city in enumerate(cities):
@@ -694,7 +711,7 @@ def traveling_salesman():
     tour_str = " -> ".join(cities[i] for i in tour)
     print(f"  {tour_str}")
 
-    total_dist = sum(distances[tour[i]][tour[i+1]] for i in range(len(tour) - 1))
+    total_dist = sum(distances[tour[i]][tour[i + 1]] for i in range(len(tour) - 1))
     print(f"\nTotal distance: {total_dist:.2f}")
     print(f"Status: {result.status}")
 
@@ -704,6 +721,7 @@ def traveling_salesman():
 # =============================================================================
 # Bin Packing Problem
 # =============================================================================
+
 
 def bin_packing():
     """
@@ -727,7 +745,7 @@ def bin_packing():
     # Items and their sizes
     items = ["File_A", "File_B", "File_C", "File_D", "File_E", "File_F"]
     sizes = [4, 8, 5, 1, 7, 3]  # Size of each item
-    capacity = 10               # Bin capacity
+    capacity = 10  # Bin capacity
 
     n_items = len(items)
     n_bins = n_items  # Upper bound: one item per bin
@@ -735,11 +753,13 @@ def bin_packing():
     nvx.reset_variable_ids()
 
     # y[j] = 1 if bin j is used
-    y = [Variable(integer=True, name=f"y_bin{j}") for j in range(n_bins)]
+    y = [Variable(binary=True, name=f"y_bin{j}") for j in range(n_bins)]
 
     # x[i][j] = 1 if item i is placed in bin j
-    x = [[Variable(integer=True, name=f"x_{items[i]}_bin{j}")
-          for j in range(n_bins)] for i in range(n_items)]
+    x = [
+        [Variable(binary=True, name=f"x_{items[i]}_bin{j}") for j in range(n_bins)]
+        for i in range(n_items)
+    ]
 
     # Initialize
     for j in range(n_bins):
@@ -759,27 +779,16 @@ def bin_packing():
 
     # Bin capacity constraint
     for j in range(n_bins):
-        constraints.append(sum(sizes[i] * x[i][j] for i in range(n_items)) <= capacity * y[j])
+        constraints.append(
+            sum(sizes[i] * x[i][j] for i in range(n_items)) <= capacity * y[j]
+        )
 
     # Symmetry breaking: use bins in order
     for j in range(n_bins - 1):
         constraints.append(y[j] >= y[j + 1])
 
-    # Binary constraints
-    for j in range(n_bins):
-        constraints.append(y[j] ^ [0, 1])
-    for i in range(n_items):
-        for j in range(n_bins):
-            constraints.append(x[i][j] ^ [0, 1])
-
-    problem = Problem(Minimize(num_bins), constraints)
-    # Note: Bin packing has a weak LP relaxation, so we use a higher gap tolerance.
-    # The LP relaxation allows fractional bin usage (e.g., 2.8 bins), making it hard
-    # to prove optimality of an integer solution (3 bins). A 10% gap tolerance
-    # accepts the solution once we know it's within 10% of optimal.
-    result = problem.solve(solver=BNB, solver_options={
-        "bb_rel_gap": 0.10,  # Accept 10% gap (good enough for bin packing)
-    })
+    problem = Problem(Minimize(num_bins), constraints, compile=True)
+    result = problem.solve(solver=BNB)
 
     print("\nItems and sizes:")
     for i, item in enumerate(items):
@@ -793,7 +802,9 @@ def bin_packing():
         if y[j].value > 0.5:
             bin_items = [items[i] for i in range(n_items) if x[i][j].value > 0.5]
             bin_size = sum(sizes[i] for i in range(n_items) if x[i][j].value > 0.5)
-            print(f"  Bin {j + 1}: {', '.join(bin_items)} (total: {bin_size}/{capacity})")
+            print(
+                f"  Bin {j + 1}: {', '.join(bin_items)} (total: {bin_size}/{capacity})"
+            )
 
     num_used = sum(1 for j in range(n_bins) if y[j].value > 0.5)
     print(f"\nMinimum bins needed: {num_used}")
@@ -805,6 +816,7 @@ def bin_packing():
 # =============================================================================
 # Assignment Problem
 # =============================================================================
+
 
 def assignment_problem():
     """
@@ -830,10 +842,10 @@ def assignment_problem():
 
     # Cost matrix: cost for worker i to do task j (based on skill/time)
     costs = [
-        [9, 2, 7, 8],   # Alice
-        [6, 4, 3, 7],   # Bob
-        [5, 8, 1, 8],   # Carol
-        [7, 6, 9, 4],   # Dave
+        [9, 2, 7, 8],  # Alice
+        [6, 4, 3, 7],  # Bob
+        [5, 8, 1, 8],  # Carol
+        [7, 6, 9, 4],  # Dave
     ]
 
     n = len(workers)
@@ -841,8 +853,10 @@ def assignment_problem():
     nvx.reset_variable_ids()
 
     # x[i][j] = 1 if worker i is assigned to task j
-    x = [[Variable(integer=True, name=f"x_{workers[i]}_{tasks[j]}")
-          for j in range(n)] for i in range(n)]
+    x = [
+        [Variable(binary=True, name=f"x_{workers[i]}_{tasks[j]}") for j in range(n)]
+        for i in range(n)
+    ]
 
     for i in range(n):
         for j in range(n):
@@ -860,11 +874,6 @@ def assignment_problem():
     # Each task assigned to exactly one worker
     for j in range(n):
         constraints.append(sum(x[i][j] for i in range(n)) == 1)
-
-    # Binary constraints
-    for i in range(n):
-        for j in range(n):
-            constraints.append(x[i][j] ^ [0, 1])
 
     problem = Problem(Minimize(total_cost), constraints)
     result = problem.solve(solver=BNB)

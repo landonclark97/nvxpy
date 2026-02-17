@@ -2,11 +2,14 @@
 Tests designed to increase coverage of low-coverage modules.
 
 This file consolidates tests for:
-- bnb/branching.py (strong, reliability, pseudocost branching with discrete vars)
+- bnb/branching.py (strong, reliability, pseudocost branching)
 - bnb/heuristics.py (feasibility pump, round-and-fix)
 - bnb/cuts.py (OA cut generation and pruning)
 - discrete_set.py (DiscreteRanges, edge cases)
 - atoms (axis parameter, edge cases)
+
+Note: Discrete set constraints (x ^ [values]) are now reformulated to
+binary indicator variables during Problem construction.
 """
 
 import numpy as np
@@ -15,9 +18,14 @@ import pytest
 import nvxpy as nvx
 from nvxpy.variable import Variable
 from nvxpy.problem import Problem, Minimize
-from nvxpy.sets.discrete_set import DiscreteSet, DiscreteRanges, Range, _coerce_to_discrete_set
+from nvxpy.sets.discrete_set import (
+    DiscreteSet,
+    DiscreteRanges,
+    Range,
+    _coerce_to_discrete_set,
+)
 from nvxpy.solvers.bnb.cuts import OACut, generate_oa_cuts, prune_cut_pool
-from nvxpy.solvers.bnb.node import DiscreteVarInfo, PseudocostData
+from nvxpy.solvers.bnb.node import PseudocostData
 from nvxpy.solvers.bnb.branching import (
     most_fractional_branching,
     pseudocost_branching,
@@ -154,6 +162,7 @@ class TestOACuts:
 
     def test_generate_cuts_simple(self):
         """Test OA cut generation from simple constraint."""
+
         # Create a simple constraint: x >= 1 (as x - 1 >= 0)
         def con_fun(x):
             return np.array([x[0] - 1])
@@ -170,6 +179,7 @@ class TestOACuts:
 
     def test_generate_cuts_equality(self):
         """Test OA cut generation marks equality constraints."""
+
         def con_fun(x):
             return np.array([x[0] - 1])
 
@@ -222,28 +232,9 @@ class TestBranchingHelpers:
     def test_fractionality_score_standard(self):
         """Test fractionality score for standard integers."""
         # Most fractional at 0.5
-        score_half = _fractionality_score(0, 2.5, None)
-        score_near = _fractionality_score(0, 2.1, None)
+        score_half = _fractionality_score(2.5)
+        score_near = _fractionality_score(2.1)
         assert score_half < score_near  # Lower score = more fractional
-
-    def test_fractionality_score_discrete(self):
-        """Test fractionality score with discrete vars."""
-        dvar = DiscreteVarInfo(
-            var_name="x",
-            flat_index=0,
-            allowed_values=(1.0, 3.0, 5.0),
-            allowed_ranges=(),
-            tolerance=0.01,
-        )
-        discrete_vars = {0: dvar}
-
-        # Value already feasible should return inf
-        score = _fractionality_score(0, 3.0, discrete_vars)
-        assert score == float("inf")
-
-        # Value not feasible should return finite score
-        score = _fractionality_score(0, 2.0, discrete_vars)
-        assert score < float("inf")
 
     def test_most_fractional_branching(self):
         """Test most fractional variable selection."""
@@ -262,23 +253,6 @@ class TestBranchingHelpers:
         idx, val = pseudocost_branching(violations, pseudocosts)
         assert idx == 1  # Higher pseudocost score
 
-    def test_pseudocost_branching_discrete(self):
-        """Test pseudocost branching with discrete variables."""
-        dvar = DiscreteVarInfo(
-            var_name="x",
-            flat_index=0,
-            allowed_values=(1.0, 5.0, 10.0),
-            allowed_ranges=(),
-            tolerance=0.01,
-        )
-        discrete_vars = {0: dvar}
-        violations = [(0, 3.0)]  # Between 1 and 5
-        pseudocosts = {
-            0: PseudocostData(down_cost=1.0, up_cost=1.0, down_count=1, up_count=1),
-        }
-        idx, val = pseudocost_branching(violations, pseudocosts, discrete_vars)
-        assert idx == 0
-
 
 class TestBnBWithDiscreteRanges:
     """Tests for B&B with DiscreteRanges constraints."""
@@ -291,10 +265,7 @@ class TestBnBWithDiscreteRanges:
 
         # x must be in [0, 2] or [5, 7]
         # Minimize (x - 6)^2 should give x in [5, 7]
-        prob = Problem(
-            Minimize((x - 6) ** 2),
-            [x ^ [[0, 2], [5, 7]]]
-        )
+        prob = Problem(Minimize((x - 6) ** 2), [x ^ [[0, 2], [5, 7]]])
         result = prob.solve(solver=nvx.BNB)
 
         assert result.status == nvx.SolverStatus.OPTIMAL
@@ -314,7 +285,7 @@ class TestBnBWithDiscreteRanges:
             [
                 x ^ [[0, 2], [4, 6]],
                 y ^ [[0, 5], [7, 10]],
-            ]
+            ],
         )
         result = prob.solve(solver=nvx.BNB)
 
@@ -333,15 +304,14 @@ class TestBnBFeasibilityPump:
         y.value = np.array([0.0])
 
         prob = Problem(
-            Minimize((x - 3) ** 2 + (y - 4) ** 2),
-            [x >= 0, y >= 0, x <= 10, y <= 10]
+            Minimize((x - 3) ** 2 + (y - 4) ** 2), [x >= 0, y >= 0, x <= 10, y <= 10]
         )
         result = prob.solve(
             solver=nvx.BNB,
             solver_options={
                 "fp_max_iterations": 5,
                 "use_heuristics": True,
-            }
+            },
         )
 
         assert result.status == nvx.SolverStatus.OPTIMAL
@@ -424,11 +394,10 @@ class TestBnBStrongBranchingDiscrete:
 
         prob = Problem(
             Minimize((x - 2.7) ** 2 + (y - 3.3) ** 2),
-            [x ^ [1, 2, 3, 4], y ^ [1, 2, 3, 4, 5]]
+            [x ^ [1, 2, 3, 4], y ^ [1, 2, 3, 4, 5]],
         )
         result = prob.solve(
-            solver=nvx.BNB,
-            solver_options={"branching": "strong", "strong_limit": 5}
+            solver=nvx.BNB, solver_options={"branching": "strong", "strong_limit": 5}
         )
 
         assert result.status == nvx.SolverStatus.OPTIMAL
@@ -450,9 +419,13 @@ class TestBnBReliabilityBranchingDiscrete:
         prob = Problem(
             Minimize((x - 2) ** 2 + (y - 3) ** 2 + (z - 4) ** 2),
             [
-                x >= 0, y >= 0, z >= 0,
-                x <= 5, y <= 5, z <= 5,
-            ]
+                x >= 0,
+                y >= 0,
+                z >= 0,
+                x <= 5,
+                y <= 5,
+                z <= 5,
+            ],
         )
         result = prob.solve(
             solver=nvx.BNB,
@@ -460,7 +433,7 @@ class TestBnBReliabilityBranchingDiscrete:
                 "branching": "reliability",
                 "reliability_limit": 1,
                 "strong_limit": 2,
-            }
+            },
         )
 
         assert result.status == nvx.SolverStatus.OPTIMAL
@@ -489,9 +462,10 @@ class TestFunctionDecorator:
 
     def test_decorator_without_args(self):
         """Test @nvx.function without parentheses."""
+
         @nvx.function
         def my_func(x):
-            return x[0]**2 + x[1]**2
+            return x[0] ** 2 + x[1] ** 2
 
         assert isinstance(my_func, nvx.Function)
 
@@ -501,18 +475,20 @@ class TestFunctionDecorator:
 
     def test_decorator_with_args(self):
         """Test @nvx.function with keyword arguments."""
+
         @nvx.function(jac="autograd", shape=(1,))
         def my_func(x):
-            return x[0]**2 + x[1]**2
+            return x[0] ** 2 + x[1] ** 2
 
         assert isinstance(my_func, nvx.Function)
         assert my_func._shape == (1,)
 
     def test_decorator_in_problem(self):
         """Test decorated function in an optimization problem."""
+
         @nvx.function
         def rosenbrock(x):
-            return (1 - x[0])**2 + 100*(x[1] - x[0]**2)**2
+            return (1 - x[0]) ** 2 + 100 * (x[1] - x[0] ** 2) ** 2
 
         x = nvx.Variable((2,), name="x")
         x.value = [0.0, 0.0]

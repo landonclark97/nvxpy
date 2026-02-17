@@ -7,6 +7,10 @@ during branch-and-bound search:
 - Simple rounding: Round continuous solution to nearest integers
 - Fix-and-optimize: Fix integers and solve NLP for continuous variables
 - Feasibility pump: Alternate between NLP and MILP to find feasible points
+
+Note: Discrete set constraints (x ^ [values]) are now reformulated to
+binary indicator variables during Problem construction. These are handled
+with standard integer rounding heuristics.
 """
 
 from __future__ import annotations
@@ -19,10 +23,44 @@ from autograd import grad
 from scipy.optimize import minimize
 
 from ..base import ProblemData
-from .node import DiscreteVarInfo
 from .cuts import OACut, generate_oa_cuts
+from ...constants import DEFAULT_NLP_FTOL, DEFAULT_INT_TOL
 
 logger = logging.getLogger(__name__)
+
+
+def round_integers_sos1_aware(
+    x: np.ndarray,
+    int_indices: List[int],
+    sos1_groups: List[List[int]] | None,
+) -> np.ndarray:
+    """Round integer variables with SOS1-aware handling.
+
+    For SOS1 groups (from indicator variable reformulation), sets the
+    indicator with highest value to 1 and all others to 0, ensuring
+    sum(r) == 1 is satisfied.
+
+    For other integer variables, rounds to nearest integer.
+    """
+    x_rounded = x.copy()
+
+    # Track which indices are part of SOS1 groups
+    sos1_indices: Set[int] = set()
+
+    # Handle SOS1 groups: pick the indicator with max value -> 1, others -> 0
+    if sos1_groups:
+        for group in sos1_groups:
+            sos1_indices.update(group)
+            max_idx = max(group, key=lambda idx: x[idx])
+            for idx in group:
+                x_rounded[idx] = 1.0 if idx == max_idx else 0.0
+
+    # Round remaining integer variables
+    for idx in int_indices:
+        if idx not in sos1_indices:
+            x_rounded[idx] = round(x_rounded[idx])
+
+    return x_rounded
 
 
 def run_initial_heuristics(
@@ -32,8 +70,7 @@ def run_initial_heuristics(
     int_indices: List[int],
     nlp_method: str = "SLSQP",
     nlp_maxiter: int = 1000,
-    nlp_ftol: float = 1e-9,
-    discrete_vars: Dict[int, DiscreteVarInfo] | None = None,
+    nlp_ftol: float = DEFAULT_NLP_FTOL,
     fp_max_iterations: int = 0,
     fp_penalty_init: float = 0.1,
     fp_penalty_growth: float = 1.5,
@@ -42,7 +79,7 @@ def run_initial_heuristics(
 ) -> Tuple[np.ndarray | None, float]:
     """Run heuristics to find initial feasible solution."""
     from ..scipy_backend import ScipyBackend
-    
+
     int_indices_set = set(int_indices)
     best_x = None
     best_obj = float("inf")
@@ -50,12 +87,18 @@ def run_initial_heuristics(
     # 1. Simple rounding of initial point
     x0 = problem_data.x0.copy()
     x_rounded = round_and_fix(
-        x0, int_indices, int_indices_set, problem_data, cons,
-        nlp_method, nlp_maxiter, nlp_ftol, discrete_vars
+        x0,
+        int_indices,
+        int_indices_set,
+        problem_data,
+        cons,
+        nlp_method,
+        nlp_maxiter,
+        nlp_ftol,
     )
     if x_rounded is not None:
         obj_val = obj_func(x_rounded)
-        obj = float(obj_val.item()) if hasattr(obj_val, 'item') else float(obj_val)
+        obj = float(obj_val.item()) if hasattr(obj_val, "item") else float(obj_val)
         if obj < best_obj:
             best_x = x_rounded
             best_obj = obj
@@ -72,12 +115,22 @@ def run_initial_heuristics(
         result = minimize(obj_func, x0, **minimize_kwargs)
         if result.success:
             x_rounded = round_and_fix(
-                result.x, int_indices, int_indices_set, problem_data, cons,
-                nlp_method, nlp_maxiter, nlp_ftol, discrete_vars
+                result.x,
+                int_indices,
+                int_indices_set,
+                problem_data,
+                cons,
+                nlp_method,
+                nlp_maxiter,
+                nlp_ftol,
             )
             if x_rounded is not None:
                 obj_val = obj_func(x_rounded)
-                obj = float(obj_val.item()) if hasattr(obj_val, 'item') else float(obj_val)
+                obj = (
+                    float(obj_val.item())
+                    if hasattr(obj_val, "item")
+                    else float(obj_val)
+                )
                 if obj < best_obj:
                     best_x = x_rounded
                     best_obj = obj
@@ -87,8 +140,14 @@ def run_initial_heuristics(
     # 3. Feasibility pump using scipy MILP
     try:
         fp_x, fp_obj = feasibility_pump(
-            problem_data, obj_func, cons, int_indices, int_indices_set,
-            nlp_method, nlp_maxiter, nlp_ftol, discrete_vars,
+            problem_data,
+            obj_func,
+            cons,
+            int_indices,
+            int_indices_set,
+            nlp_method,
+            nlp_maxiter,
+            nlp_ftol,
             max_iterations=fp_max_iterations,
             penalty_init=fp_penalty_init,
             penalty_growth=fp_penalty_growth,
@@ -113,17 +172,22 @@ def rounding_heuristic(
     cons: List[Dict],
     nlp_method: str = "SLSQP",
     nlp_maxiter: int = 1000,
-    nlp_ftol: float = 1e-9,
-    discrete_vars: Dict[int, DiscreteVarInfo] | None = None,
+    nlp_ftol: float = DEFAULT_NLP_FTOL,
 ) -> Tuple[np.ndarray | None, float]:
-    """Try to round current solution to integer/discrete feasibility."""
+    """Try to round current solution to integer feasibility."""
     x_rounded = round_and_fix(
-        x, int_indices, int_indices_set, problem_data, cons,
-        nlp_method, nlp_maxiter, nlp_ftol, discrete_vars
+        x,
+        int_indices,
+        int_indices_set,
+        problem_data,
+        cons,
+        nlp_method,
+        nlp_maxiter,
+        nlp_ftol,
     )
     if x_rounded is not None:
         obj_val = obj_func(x_rounded)
-        obj = float(obj_val.item()) if hasattr(obj_val, 'item') else float(obj_val)
+        obj = float(obj_val.item()) if hasattr(obj_val, "item") else float(obj_val)
         return x_rounded, obj
     return None, float("inf")
 
@@ -136,8 +200,7 @@ def feasibility_pump(
     int_indices_set: Set[int],
     nlp_method: str = "SLSQP",
     nlp_maxiter: int = 1000,
-    nlp_ftol: float = 1e-9,
-    discrete_vars: Dict[int, DiscreteVarInfo] | None = None,
+    nlp_ftol: float = DEFAULT_NLP_FTOL,
     max_iterations: int = 0,
     penalty_init: float = 0.1,
     penalty_growth: float = 1.5,
@@ -167,7 +230,6 @@ def feasibility_pump(
         nlp_method: Method for NLP solves
         nlp_maxiter: Max iterations for NLP solves
         nlp_ftol: Tolerance for NLP solves
-        discrete_vars: Discrete variable info
         max_iterations: Maximum pump iterations
         penalty_init: Initial penalty weight for distance term
         penalty_growth: Multiplier for penalty each iteration
@@ -178,7 +240,7 @@ def feasibility_pump(
         Tuple of (solution, objective) or (None, inf) if no solution found
     """
     from ..scipy_backend import ScipyBackend
-    
+
     # Early exit if disabled
     if max_iterations <= 0:
         return None, float("inf")
@@ -190,6 +252,7 @@ def feasibility_pump(
 
     # Extract simple bounds for MILP
     from .utils import extract_simple_bounds
+
     simple_bounds = extract_simple_bounds(problem_data)
     lb = np.full(n_vars, -1e8)
     ub = np.full(n_vars, 1e8)
@@ -254,7 +317,8 @@ def feasibility_pump(
             if not result.success:
                 break
             x_nlp = result.x
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Feasibility pump NLP solve failed: {e}")
             break
 
         # Generate OA cuts at this NLP solution (if enabled)
@@ -265,16 +329,10 @@ def feasibility_pump(
             if len(fp_oa_cuts) > 100:
                 fp_oa_cuts = fp_oa_cuts[-100:]
 
-        # Step 2: Round to integer point
-        x_rounded = x_nlp.copy()
-        for idx in int_indices:
-            if discrete_vars and idx in discrete_vars:
-                dvar = discrete_vars[idx]
-                x_rounded[idx] = min(
-                    dvar.allowed_values, key=lambda v: abs(v - x_nlp[idx])
-                )
-            else:
-                x_rounded[idx] = round(x_nlp[idx])
+        # Step 2: Round to integer point (SOS1-aware)
+        x_rounded = round_integers_sos1_aware(
+            x_nlp, int_indices, problem_data.sos1_groups
+        )
 
         # Create pattern for cycle detection
         int_pattern = tuple(x_rounded[i] for i in int_indices)
@@ -285,17 +343,12 @@ def feasibility_pump(
             logger.debug(f"FP iteration {iteration}: cycle detected, perturbing")
             for idx in int_indices:
                 if np.random.random() < 0.3:  # Flip ~30% of integers
-                    if discrete_vars and idx in discrete_vars:
-                        dvar = discrete_vars[idx]
-                        # Pick a random allowed value
-                        x_rounded[idx] = np.random.choice(list(dvar.allowed_values))
+                    # Flip binary or shift integer
+                    if lb[idx] == 0 and ub[idx] == 1:
+                        x_rounded[idx] = 1.0 - x_rounded[idx]
                     else:
-                        # Flip binary or shift integer
-                        if lb[idx] == 0 and ub[idx] == 1:
-                            x_rounded[idx] = 1.0 - x_rounded[idx]
-                        else:
-                            x_rounded[idx] += np.random.choice([-1, 1])
-                            x_rounded[idx] = np.clip(x_rounded[idx], lb[idx], ub[idx])
+                        x_rounded[idx] += np.random.choice([-1, 1])
+                        x_rounded[idx] = np.clip(x_rounded[idx], lb[idx], ub[idx])
             # Update pattern after perturbation
             int_pattern = tuple(x_rounded[i] for i in int_indices)
 
@@ -306,18 +359,26 @@ def feasibility_pump(
 
         # Try fix-and-optimize: fix integers and solve for continuous
         fixed_x = round_and_fix(
-            x_rounded, int_indices, int_indices_set, problem_data, cons,
-            nlp_method, nlp_maxiter, nlp_ftol, discrete_vars
+            x_rounded,
+            int_indices,
+            int_indices_set,
+            problem_data,
+            cons,
+            nlp_method,
+            nlp_maxiter,
+            nlp_ftol,
         )
 
         if fixed_x is not None:
             # Found a feasible solution!
             obj_val = obj_func(fixed_x)
-            obj = float(obj_val.item()) if hasattr(obj_val, 'item') else float(obj_val)
+            obj = float(obj_val.item()) if hasattr(obj_val, "item") else float(obj_val)
             if obj < best_obj:
                 best_x = fixed_x.copy()
                 best_obj = obj
-                logger.debug(f"FP iteration {iteration}: found feasible solution, obj={obj:.4e}")
+                logger.debug(
+                    f"FP iteration {iteration}: found feasible solution, obj={obj:.4e}"
+                )
             # Continue to see if we can find better
             # Increase penalty to stay near this good region (capped)
             penalty = min(penalty * penalty_growth, max_penalty)
@@ -384,7 +445,7 @@ def feasibility_pump(
                 constraints=milp_constraints,
                 integrality=integrality_ext,
                 bounds=Bounds(lb_ext, ub_ext),
-                options={"time_limit": time_limit}
+                options={"time_limit": time_limit},
             )
             if milp_result.success:
                 x = milp_result.x[:n_vars]
@@ -393,8 +454,9 @@ def feasibility_pump(
                 x = x_nlp.copy()
                 for idx in int_indices:
                     x[idx] += np.random.uniform(-0.1, 0.1)
-        except Exception:
-            # MILP not available, use perturbation
+        except Exception as e:
+            # MILP not available or failed, use perturbation
+            logger.debug(f"Feasibility pump MILP projection failed: {e}")
             x = x_nlp.copy()
             for idx in int_indices:
                 x[idx] += np.random.uniform(-0.1, 0.1)
@@ -413,66 +475,30 @@ def round_and_fix(
     cons: List[Dict],
     nlp_method: str = "SLSQP",
     nlp_maxiter: int = 1000,
-    nlp_ftol: float = 1e-9,
-    discrete_vars: Dict[int, DiscreteVarInfo] | None = None,
+    nlp_ftol: float = DEFAULT_NLP_FTOL,
 ) -> np.ndarray | None:
-    """Round integers/discrete vars and solve NLP for continuous vars."""
+    """Round integer variables and solve NLP for continuous variables.
+
+    Handles SOS1 constraints from indicator variable reformulation:
+    for each SOS1 group, sets the indicator with highest value to 1
+    and all others to 0, ensuring sum(r) == 1 is satisfied.
+    """
     from ..scipy_backend import ScipyBackend
-    from ..base import build_objective
-    
-    x_fixed = x.copy()
 
-    # Round integer/discrete variables
-    for idx in int_indices:
-        if discrete_vars and idx in discrete_vars:
-            # Round to nearest allowed value (handles both discrete values and ranges)
-            dvar = discrete_vars[idx]
-            x_fixed[idx] = dvar.nearest(x[idx])
-        else:
-            # Standard rounding
-            x_fixed[idx] = round(x_fixed[idx])
+    # Round integer variables (SOS1-aware)
+    x_fixed = round_integers_sos1_aware(x, int_indices, problem_data.sos1_groups)
 
-    # For pure range variables (DiscreteRanges), we need to:
-    # 1. Find which range the current value is closest to
-    # 2. Set bounds to that range so NLP stays within it
-    range_bounds: Dict[int, Tuple[float, float]] = {}
-    if discrete_vars:
-        for idx, dvar in discrete_vars.items():
-            if idx in int_indices_set:
-                continue  # Already handled above
-            # Find the range that contains the value, or the nearest range
-            val = x[idx]
-            best_range = None
-            best_dist = float('inf')
-            for r_lb, r_ub in dvar.allowed_ranges:
-                if r_lb <= val <= r_ub:
-                    # Value is in this range
-                    best_range = (r_lb, r_ub)
-                    break
-                else:
-                    # Distance to range
-                    dist = min(abs(val - r_lb), abs(val - r_ub))
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_range = (r_lb, r_ub)
-            if best_range:
-                range_bounds[idx] = best_range
-                # Also project the value into this range
-                x_fixed[idx] = max(best_range[0], min(best_range[1], val))
-
-    # Fix integer variables and constrain range variables
+    # Fix integer variables by setting their bounds to the rounded value
     n = len(x)
     bounds = []
     for i in range(n):
         if i in int_indices_set:
             bounds.append((x_fixed[i], x_fixed[i]))  # Fixed
-        elif i in range_bounds:
-            bounds.append(range_bounds[i])  # Constrained to one range
         else:
             bounds.append((None, None))
 
-    # Build objective for continuous vars only
-    obj_func = build_objective(problem_data)
+    # Use objective from problem_data
+    obj_func = problem_data.objective_fn
 
     try:
         minimize_kwargs = {
@@ -490,11 +516,11 @@ def round_and_fix(
             for con in cons:
                 val = con["fun"](result.x)
                 if con["type"] == "eq":
-                    if np.any(np.abs(val) > 1e-5):
+                    if np.any(np.abs(val) > DEFAULT_INT_TOL):
                         feasible = False
                         break
                 else:  # ineq
-                    if np.any(val < -1e-5):
+                    if np.any(val < -DEFAULT_INT_TOL):
                         feasible = False
                         break
             if feasible:
@@ -503,4 +529,3 @@ def round_and_fix(
         logger.warning(f"Round-and-fix NLP failed: {e}")
 
     return None
-

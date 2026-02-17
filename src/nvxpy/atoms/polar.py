@@ -23,7 +23,7 @@ class PolarDecomposition(Expr):
         if isinstance(left, BaseExpr):
             if len(left.shape) != 2:
                 raise ValueError("PolarDecomposition requires a 2D matrix input")
-        elif hasattr(left, 'shape'):
+        elif hasattr(left, "shape"):
             if len(left.shape) != 2:
                 raise ValueError("PolarDecomposition requires a 2D matrix input")
 

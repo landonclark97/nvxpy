@@ -12,7 +12,7 @@ import networkx as nx
 
 np.random.seed(42)
 
-NUM_NODES = 4
+NUM_NODES = 5
 
 # Build directed complete graph
 G = nx.complete_graph(NUM_NODES, create_using=nx.DiGraph())
@@ -29,8 +29,8 @@ for i in range(NUM_NODES):
             # Symmetric costs
             if i < j:
                 weight = np.random.uniform(1.0, 5.0)
-                G[i][j]['weight'] = weight
-                G[j][i]['weight'] = weight
+                G[i][j]["weight"] = weight
+                G[j][i]["weight"] = weight
 
 print("Edge weights:")
 for i, j, d in G.edges(data=True):
@@ -82,12 +82,8 @@ objective = nvx_G.total_weight(edge_vars)
 print(f"\nProblem: {NUM_NODES} nodes, {len(edge_vars)} edge variables")
 print("Solving...")
 
-prob = Problem(Minimize(objective), constraints)
-result = prob.solve(solver=nvx.BNB, compile=True, solver_options={
-    "bb_verbose": True,
-    "bb_max_time": 60,
-    "bb_use_heuristics": True,
-})
+prob = Problem(Minimize(objective), constraints, compile=True)
+result = prob.solve(solver=nvx.BNB, solver_options={"outlev": 6})
 
 print(f"\nResult status: {result.status}")
 
@@ -115,7 +111,6 @@ if result.status in [nvx.SolverStatus.OPTIMAL, nvx.SolverStatus.SUBOPTIMAL]:
 
     # Compute cost
     total_cost = sum(
-        G[i][j]['weight'] * edge_vars[i, j].value
-        for (i, j) in edge_vars.keys()
+        G[i][j]["weight"] * edge_vars[i, j].value for (i, j) in edge_vars.keys()
     )
-    print(f"Total cost: {total_cost:.2f}")
+    print(f"Total cost: {total_cost.item():.2f}")

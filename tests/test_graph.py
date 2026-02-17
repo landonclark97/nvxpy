@@ -109,8 +109,9 @@ class TestDegreeConstraints:
         G = nvx.Graph(nx.complete_graph(4))
         x = G.edge_vars(binary=True)
 
-        constraints = G.degree(x)[0] >= 1
-        assert len(constraints) == 1
+        # Single node returns a single Constraint, not a list
+        constraint = G.degree(x)[0] >= 1
+        assert isinstance(constraint, nvx.Constraint)
 
     def test_degree_le(self):
         G = nvx.Graph(nx.path_graph(3))
@@ -208,8 +209,7 @@ class TestGraphSolving:
             constraints.extend(var.constraints)
 
         prob = nvx.Problem(
-            nvx.Minimize(nvx.sum([var for var in y.values()])),
-            constraints
+            nvx.Minimize(nvx.sum([var for var in y.values()])), constraints
         )
 
         result = prob.solve(solver=nvx.BNB)
@@ -233,8 +233,7 @@ class TestGraphSolving:
             constraints.extend(var.constraints)
 
         prob = nvx.Problem(
-            nvx.Maximize(nvx.sum([var for var in y.values()])),
-            constraints
+            nvx.Maximize(nvx.sum([var for var in y.values()])), constraints
         )
 
         result = prob.solve(solver=nvx.BNB)
@@ -256,10 +255,7 @@ class TestGraphSolving:
         for var in x.values():
             constraints.extend(var.constraints)
 
-        prob = nvx.Problem(
-            nvx.Minimize(G.total_weight(x)),
-            constraints
-        )
+        prob = nvx.Problem(nvx.Minimize(G.total_weight(x)), constraints)
 
         result = prob.solve(solver=nvx.BNB)
         assert result.status == nvx.SolverStatus.OPTIMAL

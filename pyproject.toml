@@ -1,6 +1,6 @@
 [project]
 name = "nvxpy"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Python DSL for simply and easily formulating and solving non-convex optimization problems."
 authors = [
     {name = "Landon Clark",email = "landonclark97@gmail.com"}
@@ -15,15 +15,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ipopt = ["cyipopt"]
-all = ["cyipopt"]
+knitro = ["knitro (>=15.0.1,<16.0.0)"]
+cyipopt = ["cyipopt (>=1.6.1,<2.0.0)"]
+all = ["cyipopt", "knitro"]
 
 [tool.poetry]
 packages = [{include = "nvxpy", from = "src"}]
 
 [tool.poetry.extras]
 ipopt = ["cyipopt"]
-all = ["cyipopt"]
+knitro = ["knitro"]
+all = ["cyipopt", "knitro"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.0"

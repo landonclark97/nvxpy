@@ -13,6 +13,7 @@ from ..constants import DEFAULT_DISCRETE_TOL
 @dataclass(frozen=True)
 class Range:
     """A continuous range [lb, ub] within a MixedDiscreteSet."""
+
     lb: float
     ub: float
 
@@ -29,11 +30,13 @@ class Range:
 
 class DiscreteSet(Set):
     """
-    A set of allowed discrete values (integers or floats).
+    A set of allowed discrete values or n-dimensional points.
 
     Used to constrain a variable to take values from a specific discrete set.
+    Supports both scalar values and n-dimensional points.
 
     Example:
+        # Scalar variable with discrete values
         x = Variable(integer=True)
         constraint = x ^ DiscreteSet([1, 10, 100, 9, -2])
         # or using the list shorthand:
@@ -42,34 +45,92 @@ class DiscreteSet(Set):
         # Also works with floats:
         y = Variable()
         constraint = y ^ [0.1, 0.5, 1.0, 2.5]
+
+        # n-dimensional points for vector variables
+        z = Variable(shape=(2,))
+        constraint = z ^ [[1, 3], [3, 6], [6, 2]]  # z can be one of these 2D points
     """
 
-    def __init__(self, values: Sequence[Union[int, float]], tolerance: float = DEFAULT_DISCRETE_TOL):
+    def __init__(
+        self,
+        values: Sequence[Union[int, float, Sequence]],
+        tolerance: float = DEFAULT_DISCRETE_TOL,
+    ):
         """
-        Create a DiscreteSet with allowed values.
+        Create a DiscreteSet with allowed values or points.
 
         Args:
-            values: A sequence of allowed values (int or float)
+            values: A sequence of allowed values (scalars or n-D points)
             tolerance: Tolerance for checking membership (default: DEFAULT_DISCRETE_TOL)
         """
-        # Keep original values, sort them, remove duplicates within tolerance
-        sorted_vals = sorted(set(float(v) for v in values))
-        # Remove duplicates that are too close
-        unique_vals = []
-        for v in sorted_vals:
-            if not unique_vals or not np.isclose(v, unique_vals[-1], atol=tolerance):
-                unique_vals.append(v)
+        if not values:
+            raise ValueError("DiscreteSet must contain at least one value")
 
-        self._values = tuple(unique_vals)
+        # Check if we have scalars or n-D points
+        first_item = values[0]
+        if isinstance(first_item, (int, float)):
+            # Scalar mode
+            self._point_dim = 1
+            # Keep original values, sort them, remove duplicates within tolerance
+            sorted_vals = sorted(set(float(v) for v in values))
+            # Remove duplicates that are too close
+            unique_vals = []
+            for v in sorted_vals:
+                if not unique_vals or not np.isclose(
+                    v, unique_vals[-1], atol=tolerance
+                ):
+                    unique_vals.append(v)
+            self._values = tuple(unique_vals)
+        else:
+            # n-D points mode
+            parsed_points = []
+            first_shape = None
+            for p in values:
+                arr = np.array(p, dtype=float)
+                if first_shape is None:
+                    first_shape = arr.shape
+                elif arr.shape != first_shape:
+                    raise ValueError(
+                        f"All points must have the same shape. Got {first_shape} and {arr.shape}"
+                    )
+                parsed_points.append(tuple(arr.flatten()))
+
+            self._point_dim = len(parsed_points[0]) if parsed_points else 0
+
+            # Remove duplicates (within tolerance)
+            unique_points = []
+            for p in parsed_points:
+                is_duplicate = False
+                for existing in unique_points:
+                    if all(
+                        np.isclose(p[i], existing[i], atol=tolerance)
+                        for i in range(len(p))
+                    ):
+                        is_duplicate = True
+                        break
+                if not is_duplicate:
+                    unique_points.append(p)
+            self._values = tuple(unique_points)
+
         self._tolerance = tolerance
         if not self._values:
             raise ValueError("DiscreteSet must contain at least one value")
-        super().__init__(name=f"DiscreteSet({list(self._values)})")
+
+        # Build name based on mode
+        if self._point_dim == 1:
+            super().__init__(name=f"DiscreteSet({list(self._values)})")
+        else:
+            super().__init__(name=f"DiscreteSet({[list(p) for p in self._values]})")
 
     @property
     def values(self) -> tuple:
-        """The sorted tuple of allowed values."""
+        """The tuple of allowed values (scalars) or points (n-D tuples)."""
         return self._values
+
+    @property
+    def point_dim(self) -> int:
+        """The dimensionality of each point (1 for scalars)."""
+        return self._point_dim
 
     @property
     def tolerance(self) -> float:
@@ -88,9 +149,18 @@ class DiscreteSet(Set):
 
         Raises:
             ValueError: If var is an integer variable but set contains non-integers
+            ValueError: If variable size doesn't match point dimensionality
         """
-        # Check if variable is integer-constrained
-        if getattr(var, "is_integer", False):
+        # Check dimension compatibility
+        var_size = getattr(var, "size", 1)
+        if var_size != self._point_dim:
+            raise ValueError(
+                f"Variable size ({var_size}) does not match DiscreteSet point dimension ({self._point_dim}). "
+                f"For a variable of size {var_size}, provide points of dimension {var_size}."
+            )
+
+        # Check if variable is integer-constrained (only for scalar mode)
+        if self._point_dim == 1 and getattr(var, "is_integer", False):
             non_integers = [v for v in self._values if v != int(v)]
             if non_integers:
                 raise ValueError(
@@ -102,18 +172,43 @@ class DiscreteSet(Set):
 
     def __contains__(self, value) -> bool:
         """Check if a value is in the set (within tolerance)."""
-        return any(np.isclose(float(value), v, atol=self._tolerance) for v in self._values)
+        if self._point_dim == 1:
+            return any(
+                np.isclose(float(value), v, atol=self._tolerance) for v in self._values
+            )
+        else:
+            arr = np.array(value).flatten()
+            if len(arr) != self._point_dim:
+                return False
+            return any(
+                all(
+                    np.isclose(arr[i], p[i], atol=self._tolerance)
+                    for i in range(self._point_dim)
+                )
+                for p in self._values
+            )
 
-    def nearest(self, value: float) -> float:
-        """Find the nearest value in the set."""
-        return min(self._values, key=lambda v: abs(v - value))
+    def nearest(self, value):
+        """Find the nearest value/point in the set."""
+        if self._point_dim == 1:
+            return min(self._values, key=lambda v: abs(float(value) - v))
+        else:
+            arr = np.array(value).flatten()
+            return min(
+                self._values,
+                key=lambda p: sum((arr[i] - p[i]) ** 2 for i in range(self._point_dim)),
+            )
 
     def values_below(self, value: float) -> tuple:
-        """Return all values in the set strictly below the given value."""
+        """Return all values in the set strictly below the given value (scalar mode only)."""
+        if self._point_dim != 1:
+            raise ValueError("values_below is only supported for scalar DiscreteSet")
         return tuple(v for v in self._values if v < value - self._tolerance)
 
     def values_above(self, value: float) -> tuple:
-        """Return all values in the set strictly above the given value."""
+        """Return all values in the set strictly above the given value (scalar mode only)."""
+        if self._point_dim != 1:
+            raise ValueError("values_above is only supported for scalar DiscreteSet")
         return tuple(v for v in self._values if v > value + self._tolerance)
 
     def __len__(self) -> int:
@@ -123,7 +218,10 @@ class DiscreteSet(Set):
         return iter(self._values)
 
     def __repr__(self):
-        return f"DiscreteSet({list(self._values)})"
+        if self._point_dim == 1:
+            return f"DiscreteSet({list(self._values)})"
+        else:
+            return f"DiscreteSet({[list(p) for p in self._values]})"
 
 
 class DiscreteRanges(Set):
@@ -145,9 +243,7 @@ class DiscreteRanges(Set):
     """
 
     def __init__(
-        self,
-        ranges: Sequence[Sequence],
-        tolerance: float = DEFAULT_DISCRETE_TOL
+        self, ranges: Sequence[Sequence], tolerance: float = DEFAULT_DISCRETE_TOL
     ):
         """
         Create a DiscreteRanges with continuous ranges.
@@ -178,7 +274,9 @@ class DiscreteRanges(Set):
         for r in parsed_ranges:
             if merged_ranges and r.lb <= merged_ranges[-1].ub + tolerance:
                 # Overlapping or adjacent, merge
-                merged_ranges[-1] = Range(merged_ranges[-1].lb, max(merged_ranges[-1].ub, r.ub))
+                merged_ranges[-1] = Range(
+                    merged_ranges[-1].lb, max(merged_ranges[-1].ub, r.ub)
+                )
             else:
                 merged_ranges.append(r)
 
@@ -259,38 +357,75 @@ class DiscreteRanges(Set):
         return f"DiscreteRanges({[[r.lb, r.ub] for r in self._ranges]})"
 
 
-def _coerce_to_discrete_set(obj) -> Union[DiscreteSet, DiscreteRanges]:
+def _coerce_to_discrete_set(
+    obj, var_size: int = 1
+) -> Union[DiscreteSet, DiscreteRanges]:
     """
-    Coerce a list/tuple to DiscreteSet or DiscreteRanges if needed.
+    Coerce a list/tuple to DiscreteSet or DiscreteRanges based on variable size.
 
-    This helper allows the shorthand:
+    The interpretation depends on matching variable size to element shape:
+
+    For scalar variables (var_size=1):
         x ^ [1, 2, 3]              -> DiscreteSet (all scalars)
-        x ^ [[0, 5], [10, 15]]     -> DiscreteRanges (all ranges)
+        x ^ [[0, 5], [10, 15]]     -> DiscreteRanges (each is a [lb, ub] range)
 
-    Note: Mixed discrete values and ranges are NOT supported.
-    Use either all scalars (DiscreteSet) or all ranges (DiscreteRanges).
+    For n-dimensional variables (var_size=n):
+        x ^ [[1,2], [3,4], [5,6]]  -> DiscreteSet with n-D points if each element has n values
+        x ^ [[0,5], [10,15]]       -> DiscreteRanges if var_size=1 (ranges)
+                                      DiscreteSet with 2D points if var_size=2
+
+    Args:
+        obj: The list/tuple to coerce
+        var_size: The size of the variable being constrained (default: 1 for scalar)
+
+    Returns:
+        DiscreteSet or DiscreteRanges
     """
     if isinstance(obj, (DiscreteSet, DiscreteRanges)):
         return obj
     if isinstance(obj, (list, tuple)):
-        # Check if items are ranges or scalars
-        has_range = any(
-            isinstance(item, (list, tuple)) and len(item) == 2
-            for item in obj
-        )
-        has_scalar = any(
-            isinstance(item, (int, float))
-            for item in obj
-        )
+        if not obj:
+            raise ValueError("Cannot create discrete set from empty sequence")
 
-        if has_range and has_scalar:
+        # Check if all items are scalars -> DiscreteSet (scalar mode)
+        all_scalars = all(isinstance(item, (int, float)) for item in obj)
+        if all_scalars:
+            return DiscreteSet(obj)
+
+        # Check if all items are sequences
+        all_sequences = all(isinstance(item, (list, tuple)) for item in obj)
+        if not all_sequences:
             raise ValueError(
-                "Cannot mix discrete values and ranges. "
-                "Use DiscreteSet for discrete values [1, 2, 3] or "
-                "DiscreteRanges for ranges [[0, 5], [10, 15]]."
+                "Cannot mix discrete values and sequences. "
+                "Use either all scalars [1, 2, 3] or all sequences [[1,2], [3,4]]."
             )
 
-        if has_range:
+        # All items are sequences - determine if ranges or points based on var_size
+        # Get the length of the first element
+        first_len = len(obj[0])
+
+        # Check all elements have consistent length
+        if not all(len(item) == first_len for item in obj):
+            raise ValueError(
+                "All elements must have the same length. "
+                f"Got lengths: {[len(item) for item in obj]}"
+            )
+
+        # Decision logic:
+        # - If var_size == 1 and element length == 2 -> DiscreteRanges (scalar with [lb, ub] ranges)
+        # - If var_size == element length -> DiscreteSet with n-D points
+        # - Otherwise -> error
+
+        if var_size == 1 and first_len == 2:
+            # Scalar variable with 2-element lists -> interpret as ranges
             return DiscreteRanges(obj)
-        return DiscreteSet(obj)
+        elif var_size == first_len:
+            # n-D variable with n-element lists -> interpret as discrete n-D points
+            return DiscreteSet(obj)
+        else:
+            raise ValueError(
+                f"Element length ({first_len}) does not match variable size ({var_size}). "
+                f"For a variable of size {var_size}, provide elements of length {var_size} for discrete points, "
+                f"or use a scalar variable (size 1) with 2-element ranges [[lb, ub], ...]."
+            )
     raise TypeError(f"Cannot convert {type(obj)} to DiscreteSet or DiscreteRanges")

@@ -9,7 +9,7 @@ from scipy.optimize import approx_fprime
 
 from ..variable import Variable
 from ..expression import BaseExpr, expr_to_str
-from ..constants import Curvature as C
+from ..constants import Curvature as C, DEFAULT_GRADIENT_EPS
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ def function(func=None, *, jac="numerical", shape=None):
     Returns:
         A Function instance wrapping the decorated function.
     """
+
     def decorator(f):
         return Function(f, jac=jac, shape=shape)
 
@@ -45,11 +46,12 @@ def function(func=None, *, jac="numerical", shape=None):
     return decorator
 
 
-class Function(BaseExpr):
-    """Wrapper for custom user-defined functions in optimization problems.
+class Function:
+    """Factory for creating FunctionExpr instances from user-defined functions.
 
-    Allows embedding arbitrary Python functions into nvxpy expressions while
-    supporting automatic differentiation for gradient-based optimization.
+    This class wraps a Python callable and provides differentiation support.
+    When called with arguments, it returns a FunctionExpr that can be used
+    in optimization problems.
 
     Args:
         func: The Python function to wrap.
@@ -66,6 +68,10 @@ class Function(BaseExpr):
         f = nvx.Function(my_func)
         x = nvx.Variable((2,))
         prob = nvx.Problem(nvx.Minimize(f(x)))
+
+        # Can safely use same function multiple times:
+        expr1 = f(x)
+        expr2 = f(y)  # Creates separate FunctionExpr, doesn't overwrite expr1
     """
 
     def __init__(
@@ -74,48 +80,95 @@ class Function(BaseExpr):
         jac: str | Callable = "numerical",
         shape: tuple[int, ...] | None = None,
     ) -> None:
-        self.op = "func"
         self.func = func
-        self.args = []
-        self.kwargs = {}
         self._shape = shape
+        self._vjp_registered = False
 
         if jac == "numerical":
             self.jac = self._numerical_diff
         elif jac == "autograd":
             self.jac = self._autograd_diff
-        elif isinstance(jac, Callable):
+        elif callable(jac):
             self.jac = jac
         else:
             raise ValueError(f"Invalid jacobian: {jac}")
 
+    def __call__(self, *args, **kwargs) -> "FunctionExpr":
+        """Create a FunctionExpr with the given arguments.
 
-    def __call__(self, *args, **kwargs):
-        self.args = args
-        self.kwargs = kwargs
+        Args:
+            *args: Positional arguments (can include Variables/expressions)
+            **kwargs: Keyword arguments (must not include Variables/expressions)
+
+        Returns:
+            A new FunctionExpr instance bound to these arguments.
+        """
         for key, arg in kwargs.items():
             if isinstance(arg, BaseExpr):
-                raise TypeError(f"Decision variables cannot be passed as keyword arguments (got '{key}')")
-        defvjp(self.func, *self.jac(self.func, *args))
-        return self
+                raise TypeError(
+                    f"Decision variables cannot be passed as keyword arguments (got '{key}')"
+                )
 
+        # Register VJP once per function (not per call)
+        if not self._vjp_registered:
+            defvjp(self.func, *self.jac(self.func, *args, **kwargs))
+            self._vjp_registered = True
 
-    def _numerical_diff(self, func, *xs):
+        return FunctionExpr(self, args, kwargs)
+
+    def _numerical_diff(self, func, *xs, **kwargs):
+        """Compute jacobian using finite differences."""
+
         def partial_grad(i):
             def grad_i(g):
                 def f_i(xi):
                     x_copy = list(xs)
                     x_copy[i] = xi
-                    return func(*x_copy, **self.kwargs)
-                return approx_fprime(xs[i], f_i, epsilon=1e-8) * g
+                    return func(*x_copy, **kwargs)
+
+                return approx_fprime(xs[i], f_i, epsilon=DEFAULT_GRADIENT_EPS) * g
+
             return grad_i
+
         return [partial_grad(i) for i in range(len(xs))]
 
+    def _autograd_diff(self, func, *xs, **kwargs):
+        """Compute jacobian using autograd."""
+        return [
+            lambda g, i=i: jacobian(lambda *a: func(*a, **kwargs))(*xs)[i] * g
+            for i in range(len(xs))
+        ]
 
-    def _autograd_diff(self, func, *xs):
-        return [lambda g, i=i: jacobian(lambda *a: func(*a, **self.kwargs))( *xs )[i] * g
-                for i in range(len(xs))]
-    
+
+class FunctionExpr(BaseExpr):
+    """Expression node representing a function call with specific arguments.
+
+    This is created by calling a Function instance with arguments. Each call
+    creates a new FunctionExpr, allowing the same Function to be used multiple
+    times in a problem without interference.
+    """
+
+    def __init__(
+        self,
+        func_wrapper: Function,
+        args: tuple,
+        kwargs: dict,
+    ) -> None:
+        self.op = "func"
+        self._func_wrapper = func_wrapper
+        self.args = args
+        self.kwargs = kwargs
+
+    @property
+    def func(self) -> Callable:
+        """The underlying Python function."""
+        return self._func_wrapper.func
+
+    @property
+    def jac(self) -> Callable:
+        """The jacobian computation method."""
+        return self._func_wrapper.jac
+
     def __repr__(self) -> str:
         args_str = []
         for arg in self.args:
@@ -128,6 +181,7 @@ class Function(BaseExpr):
 
     @property
     def value(self):
+        """Evaluate the function with current argument values."""
         args_list = []
         for arg in self.args:
             if isinstance(arg, (BaseExpr, Variable)):
@@ -138,14 +192,25 @@ class Function(BaseExpr):
 
     @property
     def curvature(self):
+        """User-defined functions have unknown curvature."""
         return C.UNKNOWN
 
     @property
     def shape(self) -> tuple[int, ...]:
-        if self._shape is not None:
-            return self._shape
-        # Try to infer from first argument if available
-        logger.warning("Function shape unknown - provide shape kwarg to Function()")
+        """Infer the output shape of the function."""
+        if self._func_wrapper._shape is not None:
+            return self._func_wrapper._shape
+        # Try to infer from evaluation
+        try:
+            val = self.value
+            if hasattr(val, "shape"):
+                return val.shape
+        except Exception:
+            logger.warning(
+                "Function shape unknown - either instantiate function "
+                "or provide shape kwarg to Function()"
+            )
+        # Fall back to first argument shape
         if self.args:
             first_arg = self.args[0]
             if isinstance(first_arg, BaseExpr):

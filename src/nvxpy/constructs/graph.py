@@ -84,8 +84,13 @@ class DegreeExpr:
         G.in_degree(x) >= 1
     """
 
-    def __init__(self, graph: "BaseGraph", edge_vars: EdgeVars, node: Any = None,
-                 degree_type: str = "degree"):
+    def __init__(
+        self,
+        graph: "BaseGraph",
+        edge_vars: EdgeVars,
+        node: Any = None,
+        degree_type: str = "degree",
+    ):
         self._graph = graph
         self._edge_vars = edge_vars
         self._node = node
@@ -116,16 +121,13 @@ class DegreeExpr:
         if not terms:
             return 0
 
-        result = terms[0]
-        for t in terms[1:]:
-            result = result + t
-        return result
+        return sum(terms)
 
-    def _build_constraints(self, op: str, value) -> list[Constraint]:
+    def _build_constraints(self, op: str, value) -> Constraint | list[Constraint]:
         """Build constraints for all nodes or single node."""
         if self._node is not None:
             expr = self._get_degree_expr(self._node)
-            return [Constraint(expr, op, value)]
+            return Constraint(expr, op, value)
 
         # Apply to all nodes
         constraints = []
@@ -151,6 +153,8 @@ class DegreeExpr:
 class BaseGraph:
     """Base class for Graph and DiGraph."""
 
+    _graph_counter: int = 0  # Class-level counter for unique graph IDs
+
     def __init__(self, nx_graph: "nx.Graph | nx.DiGraph", weight_attr: str = "weight"):
         """
         Args:
@@ -159,6 +163,10 @@ class BaseGraph:
         """
         self._nx_graph = nx_graph
         self._weight_attr = weight_attr
+        self._edge_vars_created = 0
+        self._node_vars_created = 0
+        self._graph_id = BaseGraph._graph_counter
+        BaseGraph._graph_counter += 1
 
     @property
     def nodes(self):
@@ -168,8 +176,9 @@ class BaseGraph:
     def edges(self):
         return self._nx_graph.edges()
 
-    def edge_vars(self, binary: bool = False, integer: bool = False,
-                  name_prefix: str = "e") -> EdgeVars:
+    def edge_vars(
+        self, binary: bool = False, integer: bool = False, name_prefix: str = "e"
+    ) -> EdgeVars:
         """Create decision variables for each edge.
 
         Args:
@@ -184,15 +193,17 @@ class BaseGraph:
         for _, (u, v) in enumerate(self._nx_graph.edges()):
             var = Variable(
                 shape=(1,),
-                name=f"{name_prefix}_{u}_{v}",
+                name=f"g{self._graph_id}_{name_prefix}{self._edge_vars_created}_{u}_{v}",
                 binary=binary,
                 integer=integer,
             )
             variables[(u, v)] = var
+        self._edge_vars_created += 1
         return EdgeVars(self, variables, binary=binary)
 
-    def node_vars(self, binary: bool = False, integer: bool = False,
-                  name_prefix: str = "n") -> NodeVars:
+    def node_vars(
+        self, binary: bool = False, integer: bool = False, name_prefix: str = "n"
+    ) -> NodeVars:
         """Create decision variables for each node.
 
         Args:
@@ -207,11 +218,12 @@ class BaseGraph:
         for node in self._nx_graph.nodes():
             var = Variable(
                 shape=(1,),
-                name=f"{name_prefix}_{node}",
+                name=f"g{self._graph_id}_{name_prefix}{self._node_vars_created}_{node}",
                 binary=binary,
                 integer=integer,
             )
             variables[node] = var
+        self._node_vars_created += 1
         return NodeVars(self, variables, binary=binary)
 
     def degree(self, edge_vars: EdgeVars, node=None) -> DegreeExpr:
@@ -264,11 +276,7 @@ class BaseGraph:
         """
         constraints = []
         for (u, v), evar in edge_vars.items():
-            constraints.append(Constraint(
-                node_vars[u] + node_vars[v],
-                ">=",
-                evar
-            ))
+            constraints.append(Constraint(node_vars[u] + node_vars[v], ">=", evar))
         return constraints
 
     def independent(self, node_vars: NodeVars) -> list[Constraint]:
@@ -278,15 +286,12 @@ class BaseGraph:
         """
         constraints = []
         for u, v in self._nx_graph.edges():
-            constraints.append(Constraint(
-                node_vars[u] + node_vars[v],
-                "<=",
-                1
-            ))
+            constraints.append(Constraint(node_vars[u] + node_vars[v], "<=", 1))
         return constraints
 
-    def flow_conservation(self, edge_vars: EdgeVars, source, sink,
-                          demand: float = 1.0) -> list[Constraint]:
+    def flow_conservation(
+        self, edge_vars: EdgeVars, source, sink, demand: float = 1.0
+    ) -> list[Constraint]:
         """Flow conservation constraints for network flow problems.
 
         - At source: outflow - inflow = demand
@@ -312,7 +317,6 @@ class BaseGraph:
                 if u == node:
                     outflow_terms.append(var)
 
-            
             if not (inflow_terms or outflow_terms):
                 return 0
 
@@ -350,6 +354,7 @@ class Graph(BaseGraph):
 
     def __init__(self, nx_graph: "nx.Graph", weight_attr: str = "weight"):
         import networkx as nx
+
         if isinstance(nx_graph, nx.DiGraph):
             raise TypeError("Use DiGraph for directed graphs")
         super().__init__(nx_graph, weight_attr)
@@ -375,6 +380,7 @@ class DiGraph(BaseGraph):
 
     def __init__(self, nx_graph: "nx.DiGraph", weight_attr: str = "weight"):
         import networkx as nx
+
         if not isinstance(nx_graph, nx.DiGraph):
             raise TypeError("Use Graph for undirected graphs")
         super().__init__(nx_graph, weight_attr)

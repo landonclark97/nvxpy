@@ -4,21 +4,25 @@ from typing import Dict
 
 from ..constants import Solver
 from .base import (
-    ConstraintData,
+    ConstraintFn,
     ProblemData,
     SolverBackend,
     SolverResult,
     SolverStats,
     SolverStatus,
+    uses_projection,
+    eval_projection_constraint,
 )
 from .scipy_backend import ScipyBackend
 from .ipopt_backend import IpoptBackend
+from .knitro_backend import KnitroBackend
 from .bnb import BranchAndBoundBackend
 from .global_scipy_backend import GlobalScipyBackend
 
 
 _SCIPY_BACKEND = ScipyBackend()
 _IPOPT_BACKEND = IpoptBackend()
+_KNITRO_BACKEND = KnitroBackend()
 _BNB_BACKEND = BranchAndBoundBackend()
 _GLOBAL_SCIPY_BACKEND = GlobalScipyBackend()
 
@@ -49,6 +53,7 @@ _SOLVER_BACKENDS: Dict[str, SolverBackend] = {
     Solver.BASINHOPPING.value: _GLOBAL_SCIPY_BACKEND,
     # Other
     Solver.IPOPT.value: _IPOPT_BACKEND,
+    Solver.KNITRO.value: _KNITRO_BACKEND,
     Solver.BNB.value: _BNB_BACKEND,
 }
 
@@ -65,14 +70,16 @@ def get_solver_backend(solver: Solver | str) -> SolverBackend:
 
 
 __all__ = [
-    "ConstraintData",
+    "ConstraintFn",
     "ProblemData",
     "SolverBackend",
     "SolverResult",
     "SolverStats",
     "SolverStatus",
     "IpoptBackend",
+    "KnitroBackend",
     "get_solver_backend",
     "register_solver_backend",
+    "uses_projection",
+    "eval_projection_constraint",
 ]
-

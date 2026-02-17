@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict
 
 import sys
+
 sys.path.insert(0, "src")
 
 import nvxpy as nvx
@@ -32,6 +33,7 @@ def reset_variable_ids():
 @dataclass
 class ComparisonResult:
     """Result of comparing Python vs nvxpy evaluation."""
+
     name: str
     python_time: float
     interp_time: float
@@ -43,9 +45,9 @@ class ComparisonResult:
     def __str__(self):
         return (
             f"{self.name:45s} | "
-            f"python: {self.python_time*1000:7.3f}ms | "
-            f"interp: {self.interp_time*1000:7.3f}ms ({self.interp_overhead:5.2f}x) | "
-            f"compiled: {self.compiled_time*1000:7.3f}ms ({self.compiled_overhead:5.2f}x) | "
+            f"python: {self.python_time * 1000:7.3f}ms | "
+            f"interp: {self.interp_time * 1000:7.3f}ms ({self.interp_overhead:5.2f}x) | "
+            f"compiled: {self.compiled_time * 1000:7.3f}ms ({self.compiled_overhead:5.2f}x) | "
             f"match: {self.results_match}"
         )
 
@@ -83,18 +85,19 @@ def benchmark_comparison(
     compiled_time = (time.perf_counter() - start) / num_evals
 
     # Check results match
-    results_match = (
-        np.allclose(python_result, interp_result, rtol=1e-10, atol=1e-10) and
-        np.allclose(python_result, compiled_result, rtol=1e-10, atol=1e-10)
-    )
+    results_match = np.allclose(
+        python_result, interp_result, rtol=1e-10, atol=1e-10
+    ) and np.allclose(python_result, compiled_result, rtol=1e-10, atol=1e-10)
 
     return ComparisonResult(
         name=name,
         python_time=python_time,
         interp_time=interp_time,
         compiled_time=compiled_time,
-        interp_overhead=interp_time / python_time if python_time > 0 else float('inf'),
-        compiled_overhead=compiled_time / python_time if python_time > 0 else float('inf'),
+        interp_overhead=interp_time / python_time if python_time > 0 else float("inf"),
+        compiled_overhead=compiled_time / python_time
+        if python_time > 0
+        else float("inf"),
         results_match=results_match,
     )
 
@@ -103,22 +106,23 @@ def benchmark_comparison(
 # BENCHMARK SUITE - Simple to Complex
 # =============================================================================
 
+
 def bench_simple_add():
     """Simple: x + y"""
     reset_variable_ids()
 
     # Python version
     def python_func(v):
-        return v['x'] + v['y']
+        return v["x"] + v["y"]
 
     # nvxpy version
-    x = nvx.Variable((100,), name='x')
-    y = nvx.Variable((100,), name='y')
+    x = nvx.Variable((100,), name="x")
+    y = nvx.Variable((100,), name="y")
     expr = x + y
 
     var_dict = {
-        'x': np.random.randn(100),
-        'y': np.random.randn(100),
+        "x": np.random.randn(100),
+        "y": np.random.randn(100),
     }
 
     return benchmark_comparison("simple: x + y", python_func, expr, var_dict)
@@ -129,17 +133,17 @@ def bench_simple_arithmetic():
     reset_variable_ids()
 
     def python_func(v):
-        return v['x'] + v['y'] * 2 - v['z'] / 3
+        return v["x"] + v["y"] * 2 - v["z"] / 3
 
-    x = nvx.Variable((100,), name='x')
-    y = nvx.Variable((100,), name='y')
-    z = nvx.Variable((100,), name='z')
+    x = nvx.Variable((100,), name="x")
+    y = nvx.Variable((100,), name="y")
+    z = nvx.Variable((100,), name="z")
     expr = x + y * 2 - z / 3
 
     var_dict = {
-        'x': np.random.randn(100),
-        'y': np.random.randn(100),
-        'z': np.random.randn(100),
+        "x": np.random.randn(100),
+        "y": np.random.randn(100),
+        "z": np.random.randn(100),
     }
 
     return benchmark_comparison("simple: x + y*2 - z/3", python_func, expr, var_dict)
@@ -150,15 +154,15 @@ def bench_norm_squared():
     reset_variable_ids()
 
     def python_func(v):
-        return np.linalg.norm(v['x'] - v['y']) ** 2
+        return np.linalg.norm(v["x"] - v["y"]) ** 2
 
-    x = nvx.Variable((100,), name='x')
-    y = nvx.Variable((100,), name='y')
+    x = nvx.Variable((100,), name="x")
+    y = nvx.Variable((100,), name="y")
     expr = nvx.norm(x - y) ** 2
 
     var_dict = {
-        'x': np.random.randn(100),
-        'y': np.random.randn(100),
+        "x": np.random.randn(100),
+        "y": np.random.randn(100),
     }
 
     return benchmark_comparison("medium: ||x - y||^2", python_func, expr, var_dict)
@@ -169,18 +173,20 @@ def bench_matrix_multiply():
     reset_variable_ids()
 
     def python_func(v):
-        return v['A'] @ v['B']
+        return v["A"] @ v["B"]
 
-    A = nvx.Variable((50, 50), name='A')
-    B = nvx.Variable((50, 50), name='B')
+    A = nvx.Variable((50, 50), name="A")
+    B = nvx.Variable((50, 50), name="B")
     expr = A @ B
 
     var_dict = {
-        'A': np.random.randn(50, 50),
-        'B': np.random.randn(50, 50),
+        "A": np.random.randn(50, 50),
+        "B": np.random.randn(50, 50),
     }
 
-    return benchmark_comparison("medium: A @ B", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "medium: A @ B", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_matrix_expr():
@@ -188,19 +194,21 @@ def bench_matrix_expr():
     reset_variable_ids()
 
     def python_func(v):
-        A, B = v['A'], v['B']
+        A, B = v["A"], v["B"]
         return A @ B + B.T @ A - A * B
 
-    A = nvx.Variable((30, 30), name='A')
-    B = nvx.Variable((30, 30), name='B')
+    A = nvx.Variable((30, 30), name="A")
+    B = nvx.Variable((30, 30), name="B")
     expr = A @ B + B.T @ A - A * B
 
     var_dict = {
-        'A': np.random.randn(30, 30),
-        'B': np.random.randn(30, 30),
+        "A": np.random.randn(30, 30),
+        "B": np.random.randn(30, 30),
     }
 
-    return benchmark_comparison("medium: A@B + B.T@A - A*B", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "medium: A@B + B.T@A - A*B", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_trace_and_norm():
@@ -208,19 +216,21 @@ def bench_trace_and_norm():
     reset_variable_ids()
 
     def python_func(v):
-        A, B = v['A'], v['B']
-        return np.trace(A @ B.T) + np.linalg.norm(A - B, ord='fro') ** 2
+        A, B = v["A"], v["B"]
+        return np.trace(A @ B.T) + np.linalg.norm(A - B, ord="fro") ** 2
 
-    A = nvx.Variable((30, 30), name='A')
-    B = nvx.Variable((30, 30), name='B')
-    expr = nvx.trace(A @ B.T) + nvx.norm(A - B, ord='fro') ** 2
+    A = nvx.Variable((30, 30), name="A")
+    B = nvx.Variable((30, 30), name="B")
+    expr = nvx.trace(A @ B.T) + nvx.norm(A - B, ord="fro") ** 2
 
     var_dict = {
-        'A': np.random.randn(30, 30),
-        'B': np.random.randn(30, 30),
+        "A": np.random.randn(30, 30),
+        "B": np.random.randn(30, 30),
     }
 
-    return benchmark_comparison("medium: trace(A@B.T) + ||A-B||_F^2", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "medium: trace(A@B.T) + ||A-B||_F^2", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_sum_of_norms():
@@ -232,17 +242,23 @@ def bench_sum_of_norms():
     def python_func(v):
         total = 0.0
         for i in range(n_vecs):
-            total += np.linalg.norm(v[f'x{i}']) ** 2
+            total += np.linalg.norm(v[f"x{i}"]) ** 2
         return total
 
-    vars = [nvx.Variable((50,), name=f'x{i}') for i in range(n_vecs)]
+    vars = [nvx.Variable((50,), name=f"x{i}") for i in range(n_vecs)]
     expr = nvx.norm(vars[0]) ** 2
     for i in range(1, n_vecs):
         expr = expr + nvx.norm(vars[i]) ** 2
 
-    var_dict = {f'x{i}': np.random.randn(50) for i in range(n_vecs)}
+    var_dict = {f"x{i}": np.random.randn(50) for i in range(n_vecs)}
 
-    return benchmark_comparison(f"complex: sum of {n_vecs} squared norms", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        f"complex: sum of {n_vecs} squared norms",
+        python_func,
+        expr,
+        var_dict,
+        num_evals=500,
+    )
 
 
 def bench_pairwise_distances():
@@ -255,10 +271,10 @@ def bench_pairwise_distances():
         total = 0.0
         for i in range(n_vecs):
             for j in range(i + 1, n_vecs):
-                total += np.linalg.norm(v[f'x{i}'] - v[f'x{j}']) ** 2
+                total += np.linalg.norm(v[f"x{i}"] - v[f"x{j}"]) ** 2
         return total
 
-    vars = [nvx.Variable((30,), name=f'x{i}') for i in range(n_vecs)]
+    vars = [nvx.Variable((30,), name=f"x{i}") for i in range(n_vecs)]
 
     # Build pairwise distance expression
     pairs = []
@@ -270,9 +286,15 @@ def bench_pairwise_distances():
     for p in pairs[1:]:
         expr = expr + p
 
-    var_dict = {f'x{i}': np.random.randn(30) for i in range(n_vecs)}
+    var_dict = {f"x{i}": np.random.randn(30) for i in range(n_vecs)}
 
-    return benchmark_comparison("complex: pairwise distances (5 vecs)", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: pairwise distances (5 vecs)",
+        python_func,
+        expr,
+        var_dict,
+        num_evals=500,
+    )
 
 
 def bench_polynomial():
@@ -280,20 +302,22 @@ def bench_polynomial():
     reset_variable_ids()
 
     def python_func(v):
-        x = v['x']
+        x = v["x"]
         result = x.copy()
         for i in range(2, 11):
-            result = result + x ** i
+            result = result + x**i
         return result
 
-    x = nvx.Variable((50,), name='x')
+    x = nvx.Variable((50,), name="x")
     expr = x
     for i in range(2, 11):
-        expr = expr + x ** i
+        expr = expr + x**i
 
-    var_dict = {'x': np.random.randn(50) * 0.5}  # Small values to avoid overflow
+    var_dict = {"x": np.random.randn(50) * 0.5}  # Small values to avoid overflow
 
-    return benchmark_comparison("complex: polynomial degree 10", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: polynomial degree 10", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_matrix_chain():
@@ -301,22 +325,24 @@ def bench_matrix_chain():
     reset_variable_ids()
 
     def python_func(v):
-        return v['A'] @ v['B'] @ v['C'] @ v['D']
+        return v["A"] @ v["B"] @ v["C"] @ v["D"]
 
-    A = nvx.Variable((20, 20), name='A')
-    B = nvx.Variable((20, 20), name='B')
-    C = nvx.Variable((20, 20), name='C')
-    D = nvx.Variable((20, 20), name='D')
+    A = nvx.Variable((20, 20), name="A")
+    B = nvx.Variable((20, 20), name="B")
+    C = nvx.Variable((20, 20), name="C")
+    D = nvx.Variable((20, 20), name="D")
     expr = A @ B @ C @ D
 
     var_dict = {
-        'A': np.random.randn(20, 20) * 0.3,
-        'B': np.random.randn(20, 20) * 0.3,
-        'C': np.random.randn(20, 20) * 0.3,
-        'D': np.random.randn(20, 20) * 0.3,
+        "A": np.random.randn(20, 20) * 0.3,
+        "B": np.random.randn(20, 20) * 0.3,
+        "C": np.random.randn(20, 20) * 0.3,
+        "D": np.random.randn(20, 20) * 0.3,
     }
 
-    return benchmark_comparison("complex: A @ B @ C @ D", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: A @ B @ C @ D", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_least_squares_objective():
@@ -326,21 +352,27 @@ def bench_least_squares_objective():
     lam = 0.1
 
     def python_func(v):
-        A, x, b = v['A'], v['x'], v['b']
+        A, x, b = v["A"], v["x"], v["b"]
         return np.linalg.norm(A @ x - b) ** 2 + lam * np.linalg.norm(x) ** 2
 
-    A = nvx.Variable((50, 20), name='A')
-    x = nvx.Variable((20,), name='x')
-    b = nvx.Variable((50,), name='b')
+    A = nvx.Variable((50, 20), name="A")
+    x = nvx.Variable((20,), name="x")
+    b = nvx.Variable((50,), name="b")
     expr = nvx.norm(A @ x - b) ** 2 + lam * nvx.norm(x) ** 2
 
     var_dict = {
-        'A': np.random.randn(50, 20),
-        'x': np.random.randn(20),
-        'b': np.random.randn(50),
+        "A": np.random.randn(50, 20),
+        "x": np.random.randn(20),
+        "b": np.random.randn(50),
     }
 
-    return benchmark_comparison("complex: ridge regression objective", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: ridge regression objective",
+        python_func,
+        expr,
+        var_dict,
+        num_evals=500,
+    )
 
 
 def bench_matrix_factorization_objective():
@@ -351,21 +383,25 @@ def bench_matrix_factorization_objective():
     X_const = np.random.randn(30, 20)
 
     def python_func(v):
-        U, V = v['U'], v['V']
-        return (np.linalg.norm(X_const - U @ V.T, ord='fro') ** 2 +
-                lam * (np.linalg.norm(U, ord='fro') ** 2 + np.linalg.norm(V, ord='fro') ** 2))
+        U, V = v["U"], v["V"]
+        return np.linalg.norm(X_const - U @ V.T, ord="fro") ** 2 + lam * (
+            np.linalg.norm(U, ord="fro") ** 2 + np.linalg.norm(V, ord="fro") ** 2
+        )
 
-    U = nvx.Variable((30, 5), name='U')
-    V = nvx.Variable((20, 5), name='V')
-    expr = (nvx.norm(X_const - U @ V.T, ord='fro') ** 2 +
-            lam * (nvx.norm(U, ord='fro') ** 2 + nvx.norm(V, ord='fro') ** 2))
+    U = nvx.Variable((30, 5), name="U")
+    V = nvx.Variable((20, 5), name="V")
+    expr = nvx.norm(X_const - U @ V.T, ord="fro") ** 2 + lam * (
+        nvx.norm(U, ord="fro") ** 2 + nvx.norm(V, ord="fro") ** 2
+    )
 
     var_dict = {
-        'U': np.random.randn(30, 5),
-        'V': np.random.randn(20, 5),
+        "U": np.random.randn(30, 5),
+        "V": np.random.randn(20, 5),
     }
 
-    return benchmark_comparison("complex: matrix factorization obj", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: matrix factorization obj", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_deep_expression():
@@ -373,26 +409,26 @@ def bench_deep_expression():
     reset_variable_ids()
 
     def python_func(v):
-        x, y, z = v['x'], v['y'], v['z']
+        x, y, z = v["x"], v["y"], v["z"]
         t1 = x + y
         t2 = t1 * z
         t3 = t2 - x
         t4 = t3 / (y + 1)
-        t5 = t4 ** 2
+        t5 = t4**2
         t6 = np.sqrt(np.abs(t5) + 1)
         t7 = t6 + t1
         t8 = t7 * t2
         return np.sum(t8)
 
-    x = nvx.Variable((50,), name='x')
-    y = nvx.Variable((50,), name='y')
-    z = nvx.Variable((50,), name='z')
+    x = nvx.Variable((50,), name="x")
+    y = nvx.Variable((50,), name="y")
+    z = nvx.Variable((50,), name="z")
 
     t1 = x + y
     t2 = t1 * z
     t3 = t2 - x
     t4 = t3 / (y + 1)
-    t5 = t4 ** 2
+    t5 = t4**2
     # Note: nvxpy doesn't have sqrt, so we use ** 0.5
     t6 = (nvx.abs(t5) + 1) ** 0.5
     t7 = t6 + t1
@@ -400,12 +436,14 @@ def bench_deep_expression():
     expr = nvx.sum(t8)
 
     var_dict = {
-        'x': np.random.randn(50) + 2,  # Ensure positive for sqrt
-        'y': np.random.randn(50) + 2,
-        'z': np.random.randn(50),
+        "x": np.random.randn(50) + 2,  # Ensure positive for sqrt
+        "y": np.random.randn(50) + 2,
+        "z": np.random.randn(50),
     }
 
-    return benchmark_comparison("complex: deep nested expression", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: deep nested expression", python_func, expr, var_dict, num_evals=500
+    )
 
 
 def bench_indexing_heavy():
@@ -413,24 +451,33 @@ def bench_indexing_heavy():
     reset_variable_ids()
 
     def python_func(v):
-        A = v['A']
-        return (A[0, :] + A[1, :] + A[2, :] +
-                A[:, 0] + A[:, 1] + A[:, 2] +
-                np.sum(A[3:7, 3:7]))
+        A = v["A"]
+        return (
+            A[0, :]
+            + A[1, :]
+            + A[2, :]
+            + A[:, 0]
+            + A[:, 1]
+            + A[:, 2]
+            + np.sum(A[3:7, 3:7])
+        )
 
-    A = nvx.Variable((20, 20), name='A')
-    expr = (A[0, :] + A[1, :] + A[2, :] +
-            A[:, 0] + A[:, 1] + A[:, 2] +
-            nvx.sum(A[3:7, 3:7]))
+    A = nvx.Variable((20, 20), name="A")
+    expr = (
+        A[0, :] + A[1, :] + A[2, :] + A[:, 0] + A[:, 1] + A[:, 2] + nvx.sum(A[3:7, 3:7])
+    )
 
-    var_dict = {'A': np.random.randn(20, 20)}
+    var_dict = {"A": np.random.randn(20, 20)}
 
-    return benchmark_comparison("complex: indexing heavy", python_func, expr, var_dict, num_evals=500)
+    return benchmark_comparison(
+        "complex: indexing heavy", python_func, expr, var_dict, num_evals=500
+    )
 
 
 # =============================================================================
 # MAIN BENCHMARK RUNNER
 # =============================================================================
+
 
 def run_all_benchmarks():
     """Run all comparison benchmarks."""
@@ -470,6 +517,7 @@ def run_all_benchmarks():
         except Exception as e:
             print(f"FAILED: {bench_fn.__name__}: {e}")
             import traceback
+
             traceback.print_exc()
 
     print()

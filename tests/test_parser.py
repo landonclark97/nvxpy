@@ -95,6 +95,8 @@ def test_eval_expression_with_dict():
     var_dict = {"x": 10, "y": 2, "z": 1}
     expr_dict = {"x": x, "y": y, "z": z}
     assert eval_expression(expr_dict, var_dict) == {"x": 10, "y": 2, "z": 1}
-    assert eval_expression(expr_dict, var_dict, use_value=True) == {"x": 5, "y": 3, "z": 2}
-
-
+    assert eval_expression(expr_dict, var_dict, use_value=True) == {
+        "x": 5,
+        "y": 3,
+        "z": 2,
+    }

@@ -39,11 +39,12 @@ class OACut:
     They would require an explicit epigraph variable t in the formulation.
     The NLP relaxations minimize f(x) directly without epigraph reformulation.
     """
+
     coefficients: np.ndarray  # a (gradient coefficients for x)
-    rhs: float                # b (right-hand side)
+    rhs: float  # b (right-hand side)
     is_equality: bool = False
-    age: int = 0              # Number of nodes since cut was added
-    times_active: int = 0     # Number of times cut was binding
+    age: int = 0  # Number of nodes since cut was added
+    times_active: int = 0  # Number of times cut was binding
 
 
 def generate_oa_cuts(x: np.ndarray, cons: List[Dict]) -> List[OACut]:
@@ -86,11 +87,13 @@ def generate_oa_cuts(x: np.ndarray, cons: List[Dict]) -> List[OACut]:
                 if np.all(np.isfinite(con_jac[i])):
                     grad_dot_x = np.dot(con_jac[i], x)
                     rhs = float(grad_dot_x - con_val[i])
-                    cuts.append(OACut(
-                        coefficients=con_jac[i].copy(),
-                        rhs=rhs,
-                        is_equality=(con["type"] == "eq"),
-                    ))
+                    cuts.append(
+                        OACut(
+                            coefficients=con_jac[i].copy(),
+                            rhs=rhs,
+                            is_equality=(con["type"] == "eq"),
+                        )
+                    )
         except Exception as e:
             logger.debug(f"Constraint cut generation failed: {e}")
 
@@ -104,12 +107,12 @@ def prune_cut_pool(
 ) -> List[OACut]:
     """
     Prune cut pool to remove old/inactive cuts.
-    
+
     Args:
         cuts: List of OA cuts
         max_cuts: Maximum number of cuts to keep
         max_age: Maximum age before considering removal
-        
+
     Returns:
         Filtered list of cuts
     """
@@ -129,4 +132,3 @@ def prune_cut_pool(
     scored.sort(reverse=True)
 
     return [c for _, _, c in scored[:max_cuts]]
-

@@ -96,13 +96,16 @@ class Variable(BaseExpr):
             if neg or PSD or NSD:
                 raise ValueError("Binary variable cannot be negative, PSD, or NSD")
             if pos:
-                logger.warning("Setting binary variable to be positive is redundant, can only be 0 or 1")
+                logger.warning(
+                    "Setting binary variable to be positive is redundant, can only be 0 or 1"
+                )
             if integer:
                 logger.warning("Setting binary variable to be integer is redundant")
             self.constraints.append(Constraint(self, ">=", 0))
             self.constraints.append(Constraint(self, "<=", 1))
 
         self.is_integer = bool(integer) or bool(binary)
+        self.is_binary = bool(binary)
 
     @property
     def value(self):
@@ -112,7 +115,9 @@ class Variable(BaseExpr):
     def value(self, val):
         arr = np.array(val)
         if arr.size != self.size:
-            raise ValueError(f"Cannot assign value with {arr.size} elements to variable with shape {self.shape} ({self.size} elements)")
+            raise ValueError(
+                f"Cannot assign value with {arr.size} elements to variable with shape {self.shape} ({self.size} elements)"
+            )
         self._value = arr.reshape(self.shape)
 
     def __repr__(self) -> str:
@@ -120,7 +125,7 @@ class Variable(BaseExpr):
 
     def __hash__(self) -> int:
         return hash(str(self))
-    
+
     @property
     def curvature(self):
         return C.AFFINE

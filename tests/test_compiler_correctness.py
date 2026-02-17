@@ -8,6 +8,7 @@ as the interpreted evaluation across all supported operations.
 import numpy as np
 import pytest
 import sys
+
 sys.path.insert(0, "src")
 
 import nvxpy as nvx
@@ -28,14 +29,24 @@ def assert_compiled_matches(expr, var_dict, rtol=1e-10, atol=1e-10):
     # Test IR compilation
     compiled = compile_expression(expr)
     ir_result = eval_compiled(compiled, var_dict)
-    np.testing.assert_allclose(ir_result, ref_result, rtol=rtol, atol=atol,
-                               err_msg="IR compiled result doesn't match")
+    np.testing.assert_allclose(
+        ir_result,
+        ref_result,
+        rtol=rtol,
+        atol=atol,
+        err_msg="IR compiled result doesn't match",
+    )
 
     # Test codegen compilation
     codegen_func = compile_to_function(expr)
     codegen_result = codegen_func(var_dict)
-    np.testing.assert_allclose(codegen_result, ref_result, rtol=rtol, atol=atol,
-                               err_msg="Codegen compiled result doesn't match")
+    np.testing.assert_allclose(
+        codegen_result,
+        ref_result,
+        rtol=rtol,
+        atol=atol,
+        err_msg="Codegen compiled result doesn't match",
+    )
 
 
 class TestBasicOperations:
@@ -87,7 +98,7 @@ class TestBasicOperations:
     def test_pow(self):
         reset_variable_ids()
         x = nvx.Variable((3,), name="x")
-        expr = x ** 2
+        expr = x**2
         var_dict = {"x": np.array([1, 2, 3.0])}
         assert_compiled_matches(expr, var_dict)
 
@@ -226,6 +237,7 @@ class TestAtoms:
     def test_abs(self):
         reset_variable_ids()
         from nvxpy.atoms import abs as nvx_abs
+
         x = nvx.Variable((5,), name="x")
         expr = nvx_abs(x)
         var_dict = {"x": np.random.randn(5)}
@@ -264,7 +276,7 @@ class TestComplexExpressions:
         reset_variable_ids()
         x = nvx.Variable((5,), name="x")
         y = nvx.Variable((5,), name="y")
-        expr = (x + y) * (x - y) / 2 + x ** 2
+        expr = (x + y) * (x - y) / 2 + x**2
         var_dict = {
             "x": np.random.randn(5),
             "y": np.random.randn(5),
@@ -302,8 +314,10 @@ class TestComplexExpressions:
         expr = expr * 2
         expr = expr - 3
         expr = expr / 4
-        expr = expr ** 0.5
-        var_dict = {"x": np.array([10.0, 20.0, 30.0])}  # Ensure positive after transforms
+        expr = expr**0.5
+        var_dict = {
+            "x": np.array([10.0, 20.0, 30.0])
+        }  # Ensure positive after transforms
         assert_compiled_matches(expr, var_dict)
 
     def test_wide_expression(self):
@@ -376,7 +390,7 @@ class TestFunctions:
         reset_variable_ids()
 
         def my_norm(x):
-            return np.sqrt(np.sum(x ** 2))
+            return np.sqrt(np.sum(x**2))
 
         wrapped = nvx.Function(my_norm)
         x = nvx.Variable((5,), name="x")
@@ -490,7 +504,7 @@ class TestContainers:
         """Compile a dict containing expressions."""
         reset_variable_ids()
         x = nvx.Variable((3,), name="x")
-        expr_dict = {"squared": x ** 2, "doubled": x * 2, "negated": -x}
+        expr_dict = {"squared": x**2, "doubled": x * 2, "negated": -x}
         var_dict = {"x": np.array([1, 2, 3.0])}
 
         # Test IR compilation
@@ -535,8 +549,8 @@ class TestGeneratedCode:
         x = nvx.Variable((3,), name="x")
         expr = x + 1
         func = compile_to_function(expr)
-        assert hasattr(func, '_source')
-        assert 'def _compiled_eval' in func._source
+        assert hasattr(func, "_source")
+        assert "def _compiled_eval" in func._source
 
     def test_var_names_available(self):
         """Check that variable names are available."""
@@ -545,8 +559,8 @@ class TestGeneratedCode:
         y = nvx.Variable((3,), name="y")
         expr = x + y
         func = compile_to_function(expr)
-        assert hasattr(func, '_var_names')
-        assert set(func._var_names) == {'x', 'y'}
+        assert hasattr(func, "_var_names")
+        assert set(func._var_names) == {"x", "y"}
 
 
 if __name__ == "__main__":

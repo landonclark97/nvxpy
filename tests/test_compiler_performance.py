@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 # Import nvxpy components
 import sys
+
 sys.path.insert(0, "src")
 
 import nvxpy as nvx
@@ -26,6 +27,7 @@ from nvxpy.variable import Variable
 @dataclass
 class BenchmarkResult:
     """Result of a single benchmark run."""
+
     name: str
     num_nodes: int
     interpreted_time: float
@@ -41,9 +43,9 @@ class BenchmarkResult:
         return (
             f"{self.name:40s} | "
             f"nodes: {self.num_nodes:5d} | "
-            f"interp: {self.interpreted_time*1000:7.3f}ms | "
-            f"IR: {self.compiled_time*1000:7.3f}ms ({self.speedup_ir:5.2f}x) | "
-            f"codegen: {self.codegen_time*1000:7.3f}ms ({self.speedup_codegen:5.2f}x) | "
+            f"interp: {self.interpreted_time * 1000:7.3f}ms | "
+            f"IR: {self.compiled_time * 1000:7.3f}ms ({self.speedup_ir:5.2f}x) | "
+            f"codegen: {self.codegen_time * 1000:7.3f}ms ({self.speedup_codegen:5.2f}x) | "
             f"match: {self.results_match}"
         )
 
@@ -64,7 +66,7 @@ def count_nodes(expr) -> int:
         if expr.right is not None:
             count += count_nodes(expr.right)
         return count
-    elif hasattr(expr, 'args') and expr.args:  # Function
+    elif hasattr(expr, "args") and expr.args:  # Function
         return 1 + sum(count_nodes(arg) for arg in expr.args)
     else:
         return 0  # Constants don't count
@@ -122,13 +124,14 @@ def benchmark_expression(
     codegen_time = (time.perf_counter() - start) / num_evals
 
     # Check results match
-    results_match = (
-        np.allclose(ref_result, compiled_result, rtol=1e-10, atol=1e-10) and
-        np.allclose(ref_result, codegen_result, rtol=1e-10, atol=1e-10)
-    )
+    results_match = np.allclose(
+        ref_result, compiled_result, rtol=1e-10, atol=1e-10
+    ) and np.allclose(ref_result, codegen_result, rtol=1e-10, atol=1e-10)
 
-    speedup_ir = interpreted_time / compiled_time if compiled_time > 0 else float('inf')
-    speedup_codegen = interpreted_time / codegen_time if codegen_time > 0 else float('inf')
+    speedup_ir = interpreted_time / compiled_time if compiled_time > 0 else float("inf")
+    speedup_codegen = (
+        interpreted_time / codegen_time if codegen_time > 0 else float("inf")
+    )
 
     return BenchmarkResult(
         name=name,
@@ -147,6 +150,7 @@ def benchmark_expression(
 # =============================================================================
 # BENCHMARK SUITE
 # =============================================================================
+
 
 def bench_tiny_scalar():
     """Tiny: Single scalar operation."""
@@ -169,7 +173,9 @@ def bench_small_vector():
         "x": np.random.randn(10),
         "y": np.random.randn(10),
     }
-    return benchmark_expression("small_vector (x + y*2 - 3)", expr, var_dict, num_evals=1000)
+    return benchmark_expression(
+        "small_vector (x + y*2 - 3)", expr, var_dict, num_evals=1000
+    )
 
 
 def bench_medium_matrix():
@@ -183,7 +189,9 @@ def bench_medium_matrix():
         "A": np.random.randn(10, 10),
         "B": np.random.randn(10, 10),
     }
-    return benchmark_expression("medium_matrix (A@B + A.T - B*2)", expr, var_dict, num_evals=500)
+    return benchmark_expression(
+        "medium_matrix (A@B + A.T - B*2)", expr, var_dict, num_evals=500
+    )
 
 
 def bench_medium_with_norm():
@@ -241,7 +249,9 @@ def bench_large_tree():
     right = (vars[4] - vars[5]) * (vars[6] - vars[7])
     expr = left + right
 
-    return benchmark_expression("large_tree (8 vars, balanced)", expr, var_dict, num_evals=500)
+    return benchmark_expression(
+        "large_tree (8 vars, balanced)", expr, var_dict, num_evals=500
+    )
 
 
 def bench_large_matrix_expr():
@@ -259,7 +269,9 @@ def bench_large_matrix_expr():
         "B": np.random.randn(20, 20),
         "C": np.random.randn(20, 20),
     }
-    return benchmark_expression("large_matrix_expr (3 vars)", expr, var_dict, num_evals=200)
+    return benchmark_expression(
+        "large_matrix_expr (3 vars)", expr, var_dict, num_evals=200
+    )
 
 
 def bench_xlarge_polynomial():
@@ -270,10 +282,12 @@ def bench_xlarge_polynomial():
     # Build polynomial: x + x^2 + x^3 + ... + x^20
     expr = x
     for i in range(2, 21):
-        expr = expr + x ** i
+        expr = expr + x**i
 
     var_dict = {"x": np.random.randn(100) * 0.5}  # Small values to avoid overflow
-    return benchmark_expression("xlarge_polynomial (deg 20)", expr, var_dict, num_evals=100)
+    return benchmark_expression(
+        "xlarge_polynomial (deg 20)", expr, var_dict, num_evals=100
+    )
 
 
 def bench_xlarge_multi_norm():
@@ -286,9 +300,11 @@ def bench_xlarge_multi_norm():
     # Sum of pairwise norm differences
     expr = nvx.norm(vars[0] - vars[1]) ** 2
     for i in range(1, 9):
-        expr = expr + nvx.norm(vars[i] - vars[i+1]) ** 2
+        expr = expr + nvx.norm(vars[i] - vars[i + 1]) ** 2
 
-    return benchmark_expression("xlarge_multi_norm (10 vars)", expr, var_dict, num_evals=200)
+    return benchmark_expression(
+        "xlarge_multi_norm (10 vars)", expr, var_dict, num_evals=200
+    )
 
 
 def bench_xlarge_matrix_chain():
@@ -303,7 +319,9 @@ def bench_xlarge_matrix_chain():
     for i in range(1, 6):
         expr = expr @ vars[i]
 
-    return benchmark_expression("xlarge_matrix_chain (6 mats)", expr, var_dict, num_evals=100)
+    return benchmark_expression(
+        "xlarge_matrix_chain (6 mats)", expr, var_dict, num_evals=100
+    )
 
 
 def bench_xxlarge_sum_of_norms():
@@ -319,7 +337,9 @@ def bench_xxlarge_sum_of_norms():
     for i in range(1, n_vars):
         expr = expr + nvx.norm(vars[i]) ** 2
 
-    return benchmark_expression("xxlarge_sum_of_norms (20 vars)", expr, var_dict, num_evals=100)
+    return benchmark_expression(
+        "xxlarge_sum_of_norms (20 vars)", expr, var_dict, num_evals=100
+    )
 
 
 def bench_xxlarge_combined():
@@ -332,7 +352,7 @@ def bench_xxlarge_combined():
     y = nvx.Variable((30,), name="y")
 
     # Complex expression with matrices and vectors
-    mat_expr = A @ B + B @ A.T - A ** 2
+    mat_expr = A @ B + B @ A.T - A**2
     vec_expr = (A @ x - B @ y) + (B.T @ x + A.T @ y)
     expr = nvx.trace(mat_expr) + nvx.norm(vec_expr) ** 2
 
@@ -342,7 +362,9 @@ def bench_xxlarge_combined():
         "x": np.random.randn(30),
         "y": np.random.randn(30),
     }
-    return benchmark_expression("xxlarge_combined (mats+vecs)", expr, var_dict, num_evals=100)
+    return benchmark_expression(
+        "xxlarge_combined (mats+vecs)", expr, var_dict, num_evals=100
+    )
 
 
 def bench_indexing():
@@ -378,6 +400,7 @@ def bench_nested_atoms():
 # =============================================================================
 # MAIN BENCHMARK RUNNER
 # =============================================================================
+
 
 def run_all_benchmarks() -> List[BenchmarkResult]:
     """Run all benchmarks and return results."""
@@ -426,9 +449,13 @@ def run_all_benchmarks() -> List[BenchmarkResult]:
     avg_speedup_codegen = sum(r.speedup_codegen for r in results) / len(results)
     all_match = all(r.results_match for r in results)
 
-    print(f"Total interpreted time:   {total_interp*1000:.3f}ms")
-    print(f"Total IR compiled time:   {total_ir*1000:.3f}ms  (avg {avg_speedup_ir:.2f}x speedup)")
-    print(f"Total codegen time:       {total_codegen*1000:.3f}ms  (avg {avg_speedup_codegen:.2f}x speedup)")
+    print(f"Total interpreted time:   {total_interp * 1000:.3f}ms")
+    print(
+        f"Total IR compiled time:   {total_ir * 1000:.3f}ms  (avg {avg_speedup_ir:.2f}x speedup)"
+    )
+    print(
+        f"Total codegen time:       {total_codegen * 1000:.3f}ms  (avg {avg_speedup_codegen:.2f}x speedup)"
+    )
     print(f"All results match:        {all_match}")
     print()
 
@@ -439,11 +466,17 @@ def run_all_benchmarks() -> List[BenchmarkResult]:
     large = [r for r in results if r.num_nodes > 50]
 
     if small:
-        print(f"  Small (<=10 nodes):   {sum(r.speedup_codegen for r in small)/len(small):.2f}x avg")
+        print(
+            f"  Small (<=10 nodes):   {sum(r.speedup_codegen for r in small) / len(small):.2f}x avg"
+        )
     if medium:
-        print(f"  Medium (11-50 nodes): {sum(r.speedup_codegen for r in medium)/len(medium):.2f}x avg")
+        print(
+            f"  Medium (11-50 nodes): {sum(r.speedup_codegen for r in medium) / len(medium):.2f}x avg"
+        )
     if large:
-        print(f"  Large (>50 nodes):    {sum(r.speedup_codegen for r in large)/len(large):.2f}x avg")
+        print(
+            f"  Large (>50 nodes):    {sum(r.speedup_codegen for r in large) / len(large):.2f}x avg"
+        )
 
     return results
 

@@ -9,37 +9,37 @@ Two Compilation Strategies
 ==========================
 
 1. **Interpreted Compilation** (CompiledExpression / compile_expression)
-   
+
    Compiles the expression tree into a sequence of operations (linear IR)
    that are executed by a Python interpreter loop.
-   
+
    Pros:
    - Easier to debug (can inspect the operation sequence)
    - More flexible for dynamic modifications
    - Lower compilation overhead
-   
+
    Cons:
    - Slightly slower execution due to interpreter loop overhead
-   
+
    Use when:
    - Debugging expression evaluation
    - Expressions are evaluated only a few times
    - You need to inspect the compiled operations
 
 2. **Codegen Compilation** (CodegenCompiler / compile_to_function)
-   
+
    Generates actual Python source code and compiles it using exec().
    This creates a native Python function with no interpreter overhead.
-   
+
    Pros:
    - Fastest execution (native Python speed)
    - No per-operation dispatch overhead
    - Common subexpression elimination (CSE) built-in
-   
+
    Cons:
    - Slightly higher compilation overhead
    - Harder to debug (generated code)
-   
+
    Use when:
    - Expressions are evaluated many times (optimization loops)
    - Maximum performance is needed
@@ -51,7 +51,7 @@ Usage Examples
 Interpreted compilation::
 
     from nvxpy.compiler import compile_expression
-    
+
     x = Variable((3,), name="x")
     expr = x + 2 * x
     compiled = compile_expression(expr)
@@ -60,7 +60,7 @@ Interpreted compilation::
 Codegen compilation::
 
     from nvxpy.compiler import compile_to_function
-    
+
     x = Variable((3,), name="x")
     expr = x + 2 * x
     compiled_func = compile_to_function(expr)
@@ -69,10 +69,10 @@ Codegen compilation::
 Unified interface with strategy choice::
 
     from nvxpy.compiler import compile_expr
-    
+
     # Use codegen (default, fastest)
     compiled = compile_expr(expr, strategy="codegen")
-    
+
     # Use interpreted
     compiled = compile_expr(expr, strategy="interpreted")
 
@@ -81,7 +81,7 @@ Internal Architecture
 
 The compilation process (for both strategies):
 1. Traverse the expression tree once
-2. Emit operations in topological order  
+2. Emit operations in topological order
 3. Store constants and operation metadata
 4. Return a compiled function that executes the operations
 
@@ -97,36 +97,38 @@ import autograd.numpy as np
 
 from .expression import Expr
 from .variable import Variable
-from .constructs.function import Function
+from .constructs.function import FunctionExpr
 
 
 @dataclass
 class CompiledOp:
     """A single compiled operation."""
-    op: str                          # Operation name
-    result_idx: int                  # Index to store result
-    left_idx: int                    # Index of left operand (-1 for constants)
-    right_idx: int                   # Index of right operand (-1 for None/constants)
-    left_const: Any = None           # Left constant value (if left_idx == -1)
-    right_const: Any = None          # Right constant value (if right_idx == -1)
-    atom_callable: Callable = None   # For atom operations (norm, trace, etc.)
-    func_callable: Callable = None   # For Function operations
-    func_kwargs: Dict = None         # Kwargs for Function
-    getitem_key: Any = None          # For getitem operations
+
+    op: str  # Operation name
+    result_idx: int  # Index to store result
+    left_idx: int  # Index of left operand (-1 for constants)
+    right_idx: int  # Index of right operand (-1 for None/constants)
+    left_const: Any = None  # Left constant value (if left_idx == -1)
+    right_const: Any = None  # Right constant value (if right_idx == -1)
+    atom_callable: Callable = None  # For atom operations (norm, trace, etc.)
+    func_callable: Callable = None  # For Function operations
+    func_kwargs: Dict = None  # Kwargs for Function
+    getitem_key: Any = None  # For getitem operations
     # For container operations (dict, list, tuple)
-    elem_indices: List[int] = None   # Slot indices of elements (-1 for constants)
-    elem_consts: List[Any] = None    # Constant values for elements
-    dict_keys: List[Any] = None      # Keys for dict elements
-    container_type: type = None      # list or tuple (for preserving type)
+    elem_indices: List[int] = None  # Slot indices of elements (-1 for constants)
+    elem_consts: List[Any] = None  # Constant values for elements
+    dict_keys: List[Any] = None  # Keys for dict elements
+    container_type: type = None  # list or tuple (for preserving type)
 
 
 @dataclass
 class CompiledExpression:
     """A compiled expression ready for fast evaluation."""
-    ops: List[CompiledOp]            # Sequence of operations
-    var_indices: Dict[str, int]      # Map variable names to slot indices
-    result_idx: int                  # Index of final result
-    num_slots: int                   # Total number of temporary slots needed
+
+    ops: List[CompiledOp]  # Sequence of operations
+    var_indices: Dict[str, int]  # Map variable names to slot indices
+    result_idx: int  # Index of final result
+    num_slots: int  # Total number of temporary slots needed
 
     # Pre-allocated workspace (created on first eval, reused)
     _workspace: List | None = field(default=None, repr=False)
@@ -143,7 +145,7 @@ _BINARY_OPS = {
     "sub": lambda left, right: left - right,
     "mul": lambda left, right: left * right,
     "div": lambda left, right: left / right,
-    "pow": lambda left, right: left ** right,
+    "pow": lambda left, right: left**right,
     "matmul": lambda left, right: left @ right,
 }
 
@@ -161,7 +163,7 @@ class ExpressionCompiler:
         self.ops: List[CompiledOp] = []
         self.slot_counter = 0
         self.expr_to_slot: Dict[int, int] = {}  # expr id -> slot index
-        self.var_indices: Dict[str, int] = {}    # var name -> slot index
+        self.var_indices: Dict[str, int] = {}  # var name -> slot index
         self.var_objects: Dict[str, Variable] = {}  # var name -> Variable object
 
     def _alloc_slot(self) -> int:
@@ -205,7 +207,7 @@ class ExpressionCompiler:
                 self.var_objects[expr.name] = expr
             return self.var_indices[expr.name]
 
-        elif isinstance(expr, Function):
+        elif isinstance(expr, FunctionExpr):
             # Compile all function arguments
             arg_indices = []
             arg_consts = []
@@ -228,7 +230,7 @@ class ExpressionCompiler:
                 left_const=arg_consts[0] if arg_consts else None,
                 right_const=arg_consts[1] if len(arg_consts) > 1 else None,
                 func_callable=expr.func,
-                func_kwargs=expr.kwargs if hasattr(expr, 'kwargs') else {},
+                func_kwargs=expr.kwargs if hasattr(expr, "kwargs") else {},
             )
             # Store extra args for functions with >2 arguments
             op._extra_arg_indices = arg_indices[2:] if len(arg_indices) > 2 else []
@@ -255,7 +257,11 @@ class ExpressionCompiler:
 
             # Check if this is an atom (callable Expr like norm, trace, etc.)
             atom_callable = None
-            if callable(expr) and expr.op not in _BINARY_OPS and expr.op not in _UNARY_OPS:
+            if (
+                callable(expr)
+                and expr.op not in _BINARY_OPS
+                and expr.op not in _UNARY_OPS
+            ):
                 atom_callable = expr
 
             # Special handling for getitem - store the key
@@ -353,7 +359,9 @@ def compile_expression(expr) -> CompiledExpression:
     return compiler.compile(expr)
 
 
-def eval_compiled(compiled: CompiledExpression, var_dict: Dict[str, np.ndarray]) -> np.ndarray:
+def eval_compiled(
+    compiled: CompiledExpression, var_dict: Dict[str, np.ndarray]
+) -> np.ndarray:
     """
     Evaluate a compiled expression with the given variable values.
 
@@ -402,7 +410,7 @@ def eval_compiled(compiled: CompiledExpression, var_dict: Dict[str, np.ndarray])
             if right is not None:
                 args.append(right)
             # Handle extra args for functions with >2 parameters
-            if hasattr(op, '_extra_arg_indices'):
+            if hasattr(op, "_extra_arg_indices"):
                 for idx, const in zip(op._extra_arg_indices, op._extra_arg_consts):
                     if idx >= 0:
                         args.append(workspace[idx])
@@ -438,6 +446,7 @@ def eval_compiled(compiled: CompiledExpression, var_dict: Dict[str, np.ndarray])
 # =============================================================================
 # CODEGEN COMPILER - Generates actual Python code for maximum speed
 # =============================================================================
+
 
 class CodegenCompiler:
     """
@@ -568,12 +577,12 @@ class CodegenCompiler:
             self.expr_to_temp[expr_id] = result
             return result
 
-        elif isinstance(expr, Function):
+        elif isinstance(expr, FunctionExpr):
             # Emit all arguments
             arg_names = [self._emit_node(arg) for arg in expr.args]
 
             # Allocate function reference
-            kwargs = expr.kwargs if hasattr(expr, 'kwargs') else {}
+            kwargs = expr.kwargs if hasattr(expr, "kwargs") else {}
             func_idx = self.func_counter
             self._alloc_func(expr.func, kwargs)
 
@@ -581,7 +590,9 @@ class CodegenCompiler:
             args_str = ", ".join(arg_names)
 
             if kwargs:
-                self.code_lines.append(f"{temp} = _F[{func_idx}][0]({args_str}, **_F[{func_idx}][1])")
+                self.code_lines.append(
+                    f"{temp} = _F[{func_idx}][0]({args_str}, **_F[{func_idx}][1])"
+                )
             else:
                 self.code_lines.append(f"{temp} = _F[{func_idx}][0]({args_str})")
 
@@ -631,7 +642,9 @@ class CodegenCompiler:
                 if right_name is None:
                     self.code_lines.append(f"{temp} = _A[{atom_idx}]({left_name})")
                 else:
-                    self.code_lines.append(f"{temp} = _A[{atom_idx}]({left_name}, {right_name})")
+                    self.code_lines.append(
+                        f"{temp} = _A[{atom_idx}]({left_name}, {right_name})"
+                    )
             else:
                 raise NotImplementedError(f"Codegen for op: {expr.op}")
 
@@ -716,6 +729,7 @@ def eval_expression_codegen(expr, var_dict, use_value=False):
     """
     if use_value:
         from .parser import eval_expression
+
         return eval_expression(expr, var_dict, use_value=True)
 
     expr_id = id(expr)
@@ -735,14 +749,15 @@ def clear_codegen_cache():
 # Unified Compilation Interface
 # =============================================================================
 
+
 def compile_expr(expr, strategy: str = "codegen") -> Callable:
     """
     Compile an expression tree using the specified strategy.
-    
+
     This is the recommended unified interface for expression compilation.
     It allows you to choose between different compilation strategies based
     on your performance and debugging needs.
-    
+
     Args:
         expr: An expression tree (Expr, Variable, Function, or constant)
         strategy: Compilation strategy to use:
@@ -750,16 +765,16 @@ def compile_expr(expr, strategy: str = "codegen") -> Callable:
               Best for expressions evaluated many times in optimization loops.
             - "interpreted": Compiles to an operation sequence executed by an
               interpreter loop. Easier to debug and inspect.
-    
+
     Returns:
         A callable that takes a var_dict and returns the result.
         The callable signature is: compiled(var_dict: Dict[str, np.ndarray]) -> np.ndarray
-    
+
     Example:
         >>> x = Variable((3,), name="x")
         >>> y = Variable((3,), name="y")
         >>> expr = x + y * 2
-        >>> 
+        >>>
         >>> # Use codegen (fastest, default)
         >>> f = compile_expr(expr)
         >>> result = f({"x": np.array([1,2,3]), "y": np.array([4,5,6])})
@@ -767,14 +782,14 @@ def compile_expr(expr, strategy: str = "codegen") -> Callable:
         >>> # Use interpreted (for debugging)
         >>> f = compile_expr(expr, strategy="interpreted")
         >>> result = f({"x": np.array([1,2,3]), "y": np.array([4,5,6])})
-    
+
     Performance Notes:
         - For single evaluations, the overhead of compilation may exceed
           the benefits. Consider using the parser's eval_expression() directly.
         - For repeated evaluations (100+), codegen provides significant speedup.
         - The interpreted strategy is ~2-3x faster than recursive evaluation
           but ~2-3x slower than codegen.
-    
+
     Raises:
         ValueError: If an invalid strategy is specified.
     """

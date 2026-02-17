@@ -52,11 +52,18 @@ import autograd.numpy as np
 from autograd import grad
 from scipy.optimize import minimize
 
-from ...constants import DEFAULT_INT_TOL
+from ...constants import (
+    DEFAULT_INT_TOL,
+    DEFAULT_ABS_GAP,
+    DEFAULT_REL_GAP,
+    DEFAULT_NLP_FTOL,
+    DEFAULT_CON_TOL,
+    DEFAULT_NEAR_ZERO,
+)
 
 logger = logging.getLogger(__name__)
 
-from ..base import build_objective, ProblemData, SolverResult, SolverStats, SolverStatus
+from ..base import ProblemData, SolverResult, SolverStats, SolverStatus
 from ..scipy_backend import ScipyBackend
 
 from .node import (
@@ -70,15 +77,14 @@ from .cuts import OACut, generate_oa_cuts, prune_cut_pool
 from .branching import select_branching_variable
 from .heuristics import rounding_heuristic, run_initial_heuristics
 from .utils import (
-    build_constraints_filtered,
-    create_discrete_child_nodes,
-    extract_discrete_constraints,
+    build_scipy_constraints,
+    create_child_nodes,
     extract_simple_bounds,
+    get_initial_bounds,
     get_integer_indices,
     get_integer_violations,
     get_scipy_bounds,
     get_warm_start,
-    propagate_discrete_bounds,
     remove_redundant_equality_constraints,
 )
 
@@ -145,17 +151,18 @@ class BranchAndBoundBackend:
         options = dict(solver_options)
         max_nodes = int(options.pop("bb_max_nodes", 10000))
         max_time = float(options.pop("bb_max_time", 300))
-        abs_gap = float(options.pop("bb_abs_gap", 1e-6))
-        rel_gap = float(options.pop("bb_rel_gap", 1e-4))
+        abs_gap = float(options.pop("bb_abs_gap", DEFAULT_ABS_GAP))
+        rel_gap = float(options.pop("bb_rel_gap", DEFAULT_REL_GAP))
         int_tol = float(options.pop("bb_int_tol", DEFAULT_INT_TOL))
-        verbose = bool(options.pop("bb_verbose", False))
+        # Accept both 'verbose' and 'bb_verbose' for consistency
+        verbose = bool(options.pop("bb_verbose", options.pop("verbose", False)))
 
         # Configure logging for verbose mode
         if verbose:
             logger.setLevel(logging.INFO)
             if not logger.handlers and not logger.parent.handlers:
                 handler = logging.StreamHandler()
-                handler.setFormatter(logging.Formatter('%(message)s'))
+                handler.setFormatter(logging.Formatter("%(message)s"))
                 logger.addHandler(handler)
 
         # Strategy options (speed-first defaults)
@@ -171,7 +178,7 @@ class BranchAndBoundBackend:
 
         # NLP solver options
         nlp_maxiter = int(options.pop("nlp_maxiter", 1000))
-        nlp_ftol = float(options.pop("nlp_ftol", 1e-9))
+        nlp_ftol = float(options.pop("nlp_ftol", DEFAULT_NLP_FTOL))
         nlp_method = str(options.pop("nlp_method", "SLSQP"))
 
         # Feasibility pump options
@@ -185,23 +192,20 @@ class BranchAndBoundBackend:
         nlp_options = dict(options)
 
         # Parse strategy enums
-        node_selection = self._parse_enum(node_sel_opt, NodeSelection, "bb_node_selection")
+        node_selection = self._parse_enum(
+            node_sel_opt, NodeSelection, "bb_node_selection"
+        )
         branching = self._parse_enum(branch_opt, BranchingStrategy, "bb_branching")
-
-        # Extract discrete constraints
-        discrete_vars, remaining_constraints = extract_discrete_constraints(problem_data)
 
         if verbose:
             logger.info(f"Problem size: {len(problem_data.x0)} variables")
             logger.info(f"Integer variables: {problem_data.integer_vars}")
-            logger.info(f"Discrete constraints: {len(discrete_vars)}")
             logger.info(f"Total constraints: {len(problem_data.constraints)}")
-            logger.info(f"Remaining constraints (after filtering discrete): {len(remaining_constraints)}")
 
-        # If no integer variables and no discrete constraints, solve as NLP
-        if not problem_data.integer_vars and not discrete_vars:
+        # If no integer variables, solve as NLP
+        if not problem_data.integer_vars:
             if verbose:
-                logger.info("No integer/discrete variables - solving as NLP directly")
+                logger.info("No integer variables - solving as NLP directly")
             return self._solve_nlp(problem_data, nlp_options, nlp_method)
 
         # Initialize B&B statistics
@@ -209,20 +213,13 @@ class BranchAndBoundBackend:
 
         # Get integer variable indices
         int_indices = get_integer_indices(problem_data)
-
-        # Add discrete variable indices (only non-pure-range)
-        for idx, dvar in discrete_vars.items():
-            if idx not in int_indices and not dvar.is_pure_range:
-                int_indices.append(idx)
-        int_indices = sorted(set(int_indices))
-
         int_indices_set = set(int_indices)
         n_vars = len(problem_data.x0)
 
-        # Build objective and constraint functions
-        obj_func = build_objective(problem_data)
+        # Build objective and constraint functions from ProblemData
+        obj_func = problem_data.objective_fn
         obj_grad = grad(obj_func)
-        cons = build_constraints_filtered(problem_data, remaining_constraints)
+        cons = build_scipy_constraints(problem_data)
 
         # Remove redundant equality constraints
         cons, n_removed = remove_redundant_equality_constraints(
@@ -241,7 +238,7 @@ class BranchAndBoundBackend:
         simple_bounds = extract_simple_bounds(problem_data)
 
         # Initialize variable bounds
-        initial_var_bounds = propagate_discrete_bounds(discrete_vars, simple_bounds)
+        initial_var_bounds = get_initial_bounds(simple_bounds)
 
         # Initialize best solution (incumbent)
         incumbent_x: np.ndarray | None = None
@@ -252,17 +249,27 @@ class BranchAndBoundBackend:
             if verbose:
                 logger.info("Running initial heuristics...")
             heur_x, heur_obj = run_initial_heuristics(
-                problem_data, obj_func, cons, int_indices,
-                nlp_method, nlp_maxiter, nlp_ftol, discrete_vars,
-                fp_max_iterations, fp_penalty_init, fp_penalty_growth,
-                fp_use_oa, fp_time_limit,
+                problem_data,
+                obj_func,
+                cons,
+                int_indices,
+                nlp_method,
+                nlp_maxiter,
+                nlp_ftol,
+                fp_max_iterations,
+                fp_penalty_init,
+                fp_penalty_growth,
+                fp_use_oa,
+                fp_time_limit,
             )
             if heur_x is not None:
                 incumbent_x = heur_x
                 incumbent_obj = float(heur_obj)
                 stats.heuristic_solutions += 1
                 if verbose:
-                    logger.info(f"Heuristic found initial solution: {incumbent_obj:.6e}")
+                    logger.info(
+                        f"Heuristic found initial solution: {incumbent_obj:.6e}"
+                    )
             elif verbose:
                 logger.info("Initial heuristics found no feasible solution")
 
@@ -283,15 +290,22 @@ class BranchAndBoundBackend:
         node_counter = 1
         depth_first_counter = 0
 
+        # Track global lower bound (monotonically non-decreasing for minimization)
+        # This is the minimum lower bound across all open nodes
+        global_lower_bound = float("-inf")
+
         if verbose:
-            n_discrete = len(discrete_vars)
-            logger.info(f"Branch-and-Bound: {len(int_indices)} integer/discrete variable elements")
-            if n_discrete > 0:
-                logger.info(f"  ({n_discrete} with discrete value constraints)")
-            logger.info(f"Strategy: {node_selection.value}, Branching: {branching.value}")
+            logger.info(
+                f"Branch-and-Bound: {len(int_indices)} integer variable elements"
+            )
+            logger.info(
+                f"Strategy: {node_selection.value}, Branching: {branching.value}"
+            )
             logger.info(f"OA cuts: {use_oa_cuts}, Heuristics: {use_heuristics}")
             logger.info(f"Max nodes: {max_nodes}, Max time: {max_time}s")
-            logger.info(f"{'Nodes':>8} {'Incumbent':>12} {'Best Bound':>12} {'Gap':>10} {'Time':>8}")
+            logger.info(
+                f"{'Nodes':>8} {'Incumbent':>12} {'Best Bound':>12} {'Gap':>10} {'Time':>8}"
+            )
             logger.info("-" * 54)
 
         # Main B&B loop
@@ -308,20 +322,38 @@ class BranchAndBoundBackend:
                     logger.info(f"Node limit reached ({max_nodes})")
                 break
 
-            # Update best bound from queue
+            # Update global lower bound from queue
+            # The best bound is the minimum lower_bound across all OPEN nodes in the queue
+            # IMPORTANT: Use actual minimum, not monotonically non-decreasing, for correctness.
+            # A monotone bound can stay artificially high and cause premature termination
+            # when child nodes happen to have tighter (lower) relaxation values.
             if node_queue:
-                finite_bounds = [n.lower_bound for n in node_queue if np.isfinite(n.lower_bound)]
+                finite_bounds = [
+                    n.lower_bound for n in node_queue if np.isfinite(n.lower_bound)
+                ]
                 if finite_bounds:
-                    stats.best_bound = min(finite_bounds)
+                    current_min_bound = min(finite_bounds)
+                    # Use actual minimum, not max with previous (allows bound to decrease)
+                    global_lower_bound = current_min_bound
+            stats.best_bound = global_lower_bound
 
             # Check gap
-            if incumbent_x is not None and np.isfinite(stats.best_bound) and np.isfinite(incumbent_obj):
-                if abs(incumbent_obj) > 1e-10:
-                    stats.gap = abs(incumbent_obj - stats.best_bound) / abs(incumbent_obj)
+            if (
+                incumbent_x is not None
+                and np.isfinite(stats.best_bound)
+                and np.isfinite(incumbent_obj)
+            ):
+                if abs(incumbent_obj) > DEFAULT_NEAR_ZERO:
+                    stats.gap = abs(incumbent_obj - stats.best_bound) / abs(
+                        incumbent_obj
+                    )
                 else:
                     stats.gap = abs(incumbent_obj - stats.best_bound)
 
-                if stats.gap <= rel_gap or abs(incumbent_obj - stats.best_bound) <= abs_gap:
+                if (
+                    stats.gap <= rel_gap
+                    or abs(incumbent_obj - stats.best_bound) <= abs_gap
+                ):
                     if verbose:
                         logger.info(f"Optimality gap reached (gap={stats.gap:.2e})")
                     break
@@ -341,8 +373,15 @@ class BranchAndBoundBackend:
             bounds = get_scipy_bounds(node, n_vars)
 
             nlp_result = self._solve_node_nlp(
-                obj_func, obj_grad, x0, bounds, cons, oa_cuts,
-                nlp_method, nlp_maxiter, nlp_ftol
+                obj_func,
+                obj_grad,
+                x0,
+                bounds,
+                cons,
+                oa_cuts,
+                nlp_method,
+                nlp_maxiter,
+                nlp_ftol,
             )
             stats.nlp_solves += 1
 
@@ -372,9 +411,7 @@ class BranchAndBoundBackend:
                 oa_cuts = prune_cut_pool(oa_cuts, max_cuts, cut_max_age)
 
             # Check integer feasibility
-            int_violations = get_integer_violations(
-                x_relaxed, int_indices, int_tol, discrete_vars, node.var_bounds
-            )
+            int_violations = get_integer_violations(x_relaxed, int_indices, int_tol)
 
             if not int_violations:
                 # Integer feasible
@@ -383,17 +420,23 @@ class BranchAndBoundBackend:
                     incumbent_obj = obj_relaxed
 
                     # Prune nodes with worse bounds
-                    node_queue = [n for n in node_queue
-                                  if n.lower_bound < incumbent_obj - abs_gap]
+                    node_queue = [
+                        n for n in node_queue if n.lower_bound < incumbent_obj - abs_gap
+                    ]
                     heapq.heapify(node_queue)
             else:
                 # Try heuristics
                 if use_heuristics and stats.nodes_explored % 10 == 0:
                     heur_x, heur_obj = rounding_heuristic(
-                        x_relaxed, int_indices, int_indices_set,
-                        problem_data, obj_func, cons,
-                        nlp_method, nlp_maxiter, nlp_ftol,
-                        discrete_vars
+                        x_relaxed,
+                        int_indices,
+                        int_indices_set,
+                        problem_data,
+                        obj_func,
+                        cons,
+                        nlp_method,
+                        nlp_maxiter,
+                        nlp_ftol,
                     )
                     if heur_x is not None and float(heur_obj) < incumbent_obj:
                         incumbent_x = heur_x
@@ -404,16 +447,31 @@ class BranchAndBoundBackend:
                 sb_maxiter = max(50, nlp_maxiter // 10)
                 sb_ftol = nlp_ftol * 10
                 branch_idx, branch_val = select_branching_variable(
-                    int_violations, pseudocosts, branching,
-                    x_relaxed, obj_relaxed, obj_func, obj_grad, bounds, cons,
-                    strong_limit, reliability_limit, stats,
-                    nlp_method, sb_maxiter, sb_ftol, discrete_vars
+                    int_violations,
+                    pseudocosts,
+                    branching,
+                    x_relaxed,
+                    obj_relaxed,
+                    obj_func,
+                    obj_grad,
+                    bounds,
+                    cons,
+                    strong_limit,
+                    reliability_limit,
+                    stats,
+                    nlp_method,
+                    sb_maxiter,
+                    sb_ftol,
                 )
 
                 # Create child nodes
-                left_node, right_node = create_discrete_child_nodes(
-                    node, branch_idx, branch_val, obj_relaxed,
-                    x_relaxed, node_counter, discrete_vars
+                left_node, right_node = create_child_nodes(
+                    node,
+                    branch_idx,
+                    branch_val,
+                    obj_relaxed,
+                    x_relaxed,
+                    node_counter,
                 )
                 node_counter += 2
 
@@ -423,24 +481,44 @@ class BranchAndBoundBackend:
             # Progress output
             if verbose:
                 elapsed_now = time.time() - start_time
-                bound_str = f"{stats.best_bound:>12.4e}" if stats.best_bound > -1e30 else "        -inf"
-                inc_str = f"{incumbent_obj:>12.4e}" if incumbent_x is not None else "         inf"
-                logger.info(f"{stats.nodes_explored:>8} {inc_str} "
-                      f"{bound_str} {stats.gap:>10.2e} "
-                      f"{elapsed_now:>7.1f}s")
+                bound_str = (
+                    f"{stats.best_bound:>12.4e}"
+                    if stats.best_bound > -1e30
+                    else "        -inf"
+                )
+                inc_str = (
+                    f"{incumbent_obj:>12.4e}"
+                    if incumbent_x is not None
+                    else "         inf"
+                )
+                logger.info(
+                    f"{stats.nodes_explored:>8} {inc_str} "
+                    f"{bound_str} {stats.gap:>10.2e} "
+                    f"{elapsed_now:>7.1f}s"
+                )
 
         # Determine final status
         solve_time = time.time() - start_time
 
+        # If queue is empty and we have an incumbent, the tree is exhausted.
+        # Tree exhaustion proves optimality ONLY if all nodes were properly
+        # handled (pruned by bound or integer-feasible). If nodes were lost
+        # due to NLP failures, we cannot claim optimality since those subtrees
+        # might contain better solutions.
         if not node_queue and incumbent_x is not None:
-            stats.best_bound = incumbent_obj
-            stats.gap = 0.0
+            if stats.nodes_infeasible == 0:
+                # No NLP failures - tree properly exhausted, incumbent is optimal
+                stats.best_bound = incumbent_obj
+                stats.gap = 0.0
+            # else: some nodes had NLP failures, keep existing gap as uncertain
 
         if incumbent_x is None:
             status = SolverStatus.INFEASIBLE
             x_sol = problem_data.x0
-        elif stats.gap <= rel_gap or (stats.best_bound > -1e30 and
-                                       abs(incumbent_obj - stats.best_bound) <= abs_gap):
+        elif stats.gap <= rel_gap or (
+            stats.best_bound > -1e30
+            and abs(incumbent_obj - stats.best_bound) <= abs_gap
+        ):
             status = SolverStatus.OPTIMAL
             x_sol = incumbent_x
         else:
@@ -455,6 +533,8 @@ class BranchAndBoundBackend:
             if stats.cuts_added > 0:
                 logger.info(f"OA cuts added: {stats.cuts_added}")
             logger.info(f"Heuristic solutions: {stats.heuristic_solutions}")
+            if stats.nodes_infeasible > 0:
+                logger.info(f"Nodes infeasible: {stats.nodes_infeasible}")
             if incumbent_x is not None:
                 logger.info(f"Best objective: {incumbent_obj:.6e}")
                 if stats.best_bound > -1e30:
@@ -535,7 +615,7 @@ class BranchAndBoundBackend:
         oa_cuts: List[OACut],
         method: str = "SLSQP",
         maxiter: int = 1000,
-        ftol: float = 1e-9,
+        ftol: float = DEFAULT_NLP_FTOL,
     ) -> Tuple[np.ndarray, float] | None:
         """Solve NLP relaxation at a node."""
         # Add OA cuts as linear constraints
@@ -543,15 +623,26 @@ class BranchAndBoundBackend:
 
         for cut in oa_cuts:
             if not cut.is_equality:
+
                 def make_cut_fun(c):
                     def cut_fun(x):
                         return np.dot(c.coefficients, x) - c.rhs
+
                     return cut_fun
 
-                all_cons.append({
-                    "type": "ineq",
-                    "fun": make_cut_fun(cut),
-                })
+                def make_cut_jac(c):
+                    def cut_jac(x):
+                        return c.coefficients
+
+                    return cut_jac
+
+                all_cons.append(
+                    {
+                        "type": "ineq",
+                        "fun": make_cut_fun(cut),
+                        "jac": make_cut_jac(cut),
+                    }
+                )
 
         try:
             minimize_kwargs = {
@@ -570,7 +661,7 @@ class BranchAndBoundBackend:
             x_sol = result.x
 
             # Verify constraint feasibility
-            con_tol = 1e-4
+            con_tol = DEFAULT_CON_TOL
             feasible = True
             max_violation = 0.0
             for con in cons:
@@ -592,13 +683,15 @@ class BranchAndBoundBackend:
                     break
 
             if not feasible:
-                logger.debug(f"Node NLP rejected: constraint violation = {max_violation:.2e}")
+                logger.debug(
+                    f"Node NLP rejected: constraint violation = {max_violation:.2e}"
+                )
                 return None
 
             # Track active cuts
             for cut in oa_cuts:
                 slack = np.dot(cut.coefficients, x_sol) - cut.rhs
-                if abs(slack) < 1e-4:
+                if abs(slack) < DEFAULT_CON_TOL:
                     cut.times_active += 1
 
             fun = result.fun
@@ -625,11 +718,9 @@ class BranchAndBoundBackend:
                     return member
             valid = [m.value for m in enum_class]
             raise ValueError(
-                f"Invalid value '{value}' for {option_name}. "
-                f"Valid options: {valid}"
+                f"Invalid value '{value}' for {option_name}. Valid options: {valid}"
             )
         raise ValueError(
             f"Invalid type for {option_name}: expected string or {enum_class.__name__}, "
             f"got {type(value).__name__}"
         )
-

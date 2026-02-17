@@ -24,7 +24,9 @@ class Constraint:
     def __init__(self, left: "ExprLike", op: str, right: "ExprLike | Set") -> None:
         valid_ops = [">=", "<=", "==", ">>", "<<", "<-", "in"]
         if op not in valid_ops:
-            raise ValueError(f"Invalid constraint operator '{op}'. Must be one of: {valid_ops}")
+            raise ValueError(
+                f"Invalid constraint operator '{op}'. Must be one of: {valid_ops}"
+            )
         self.left = left
         self.op = op
         self.right = right
@@ -38,6 +40,10 @@ class Constraint:
         if self.op == "in":
             return C.UNKNOWN
 
-        res = self.right - self.left if self.op in [">=", "==", ">>", "<-"] else self.left - self.right
+        res = (
+            self.right - self.left
+            if self.op in [">=", "==", ">>", "<-"]
+            else self.left - self.right
+        )
         curvature = res.curvature
         return curvature if curvature in (C.CONSTANT, C.AFFINE, C.CONVEX) else C.UNKNOWN

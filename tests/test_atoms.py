@@ -90,7 +90,7 @@ def test_amax_curvature():
     assert a.curvature == nvx.CONVEX
 
     # amax of convex is convex
-    x_sq = x ** 2
+    x_sq = x**2
     a_sq = amax(x_sq)
     assert a_sq.curvature == nvx.CONVEX
 
@@ -196,7 +196,7 @@ def test_log_curvature():
     assert log_expr.curvature == nvx.CONCAVE
 
     # log of concave is concave (composition rule)
-    neg_sq = -(x ** 2)  # concave
+    neg_sq = -(x**2)  # concave
     l_concave = log(neg_sq)
     assert l_concave.curvature == nvx.CONCAVE
 
@@ -206,7 +206,7 @@ def test_log_curvature():
     assert l_const.curvature == nvx.CONSTANT
 
     # log of convex is unknown
-    sq = x ** 2  # convex
+    sq = x**2  # convex
     l_convex = log(sq)
     assert l_convex.curvature == nvx.UNKNOWN
 
@@ -226,7 +226,7 @@ def test_exp_curvature():
     assert e.curvature == nvx.CONVEX
 
     # exp of convex is convex (composition rule)
-    sq = x ** 2  # convex
+    sq = x**2  # convex
     e_convex = exp(sq)
     assert e_convex.curvature == nvx.CONVEX
 
@@ -236,7 +236,7 @@ def test_exp_curvature():
     assert e_const.curvature == nvx.CONSTANT
 
     # exp of concave is unknown
-    neg_sq = -(x ** 2)  # concave
+    neg_sq = -(x**2)  # concave
     e_concave = exp(neg_sq)
     assert e_concave.curvature == nvx.UNKNOWN
 
@@ -256,7 +256,7 @@ def test_sqrt_curvature():
     assert s.curvature == nvx.CONCAVE
 
     # sqrt of concave is concave (composition rule)
-    neg_sq = -(x ** 2)  # concave
+    neg_sq = -(x**2)  # concave
     s_concave = sqrt(neg_sq)
     assert s_concave.curvature == nvx.CONCAVE
 
@@ -266,7 +266,7 @@ def test_sqrt_curvature():
     assert s_const.curvature == nvx.CONSTANT
 
     # sqrt of convex is unknown
-    sq = x ** 2  # convex
+    sq = x**2  # convex
     s_convex = sqrt(sq)
     assert s_convex.curvature == nvx.UNKNOWN
 
@@ -288,7 +288,7 @@ def test_minimum_curvature():
     assert m.curvature == nvx.CONCAVE
 
     # minimum of concave and affine is concave
-    neg_sq = -(x ** 2)  # concave
+    neg_sq = -(x**2)  # concave
     m_mixed = minimum(neg_sq, y)
     assert m_mixed.curvature == nvx.CONCAVE
 
@@ -299,6 +299,6 @@ def test_minimum_curvature():
     assert m_const.curvature == nvx.CONSTANT
 
     # minimum involving convex is unknown
-    sq = x ** 2  # convex
+    sq = x**2  # convex
     m_convex = minimum(sq, y)
     assert m_convex.curvature == nvx.UNKNOWN

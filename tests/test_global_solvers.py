@@ -24,7 +24,7 @@ class TestDifferentialEvolution:
     def test_with_nonlinear_constraint(self):
         """Quadratic with nonlinear constraint."""
         x = nvx.Variable((2,), name="x")
-        objective = nvx.sum((x - 1)**2)
+        objective = nvx.sum((x - 1) ** 2)
 
         # Constrain to unit circle
         constraints = [
@@ -62,7 +62,7 @@ class TestDualAnnealing:
     def test_unconstrained_quadratic(self):
         """Simple quadratic finds global minimum."""
         x = nvx.Variable(name="x")
-        objective = (x - 3)**2
+        objective = (x - 3) ** 2
 
         prob = nvx.Problem(nvx.Minimize(objective), [x >= -10, x <= 10])
         result = prob.solve(solver=nvx.DUAL_ANNEALING, solver_options={"seed": 0})
@@ -74,7 +74,7 @@ class TestDualAnnealing:
         """Multi-well function escapes local minima."""
         x = nvx.Variable(name="x")
         # Function with wells at x=-2 and x=2, minimum near x=2 is global
-        objective = (x - 2)**2 * (x + 2)**2 + 0.5 * x
+        objective = (x - 2) ** 2 * (x + 2) ** 2 + 0.5 * x
 
         prob = nvx.Problem(nvx.Minimize(objective), [x >= -5, x <= 5])
         result = prob.solve(solver=nvx.DUAL_ANNEALING, solver_options={"seed": 42})
@@ -100,7 +100,7 @@ class TestSHGO:
     def test_unconstrained_quadratic(self):
         """Simple quadratic finds global minimum."""
         x = nvx.Variable((2,), name="x")
-        objective = nvx.sum((x - 1)**2)
+        objective = nvx.sum((x - 1) ** 2)
 
         prob = nvx.Problem(nvx.Minimize(objective), [x >= -5, x <= 5])
         result = prob.solve(solver=nvx.SHGO)
@@ -112,7 +112,7 @@ class TestSHGO:
         """SHGO with nonlinear constraint."""
         x = nvx.Variable((2,), name="x")
         # Rosenbrock
-        objective = (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
+        objective = (1 - x[0]) ** 2 + 100 * (x[1] - x[0] ** 2) ** 2
 
         constraints = [
             x >= -2,
@@ -133,7 +133,7 @@ class TestBasinhopping:
     def test_no_bounds_required(self):
         """basinhopping works without explicit bounds."""
         x = nvx.Variable((2,), name="x")
-        objective = nvx.sum((x - 2)**2)
+        objective = nvx.sum((x - 2) ** 2)
 
         prob = nvx.Problem(nvx.Minimize(objective))
         result = prob.solve(solver=nvx.BASINHOPPING, solver_options={"niter": 10})
@@ -144,7 +144,7 @@ class TestBasinhopping:
     def test_with_bounds(self):
         """basinhopping uses L-BFGS-B when bounds are present."""
         x = nvx.Variable((2,), name="x")
-        objective = nvx.sum((x - 2)**2)
+        objective = nvx.sum((x - 2) ** 2)
 
         prob = nvx.Problem(nvx.Minimize(objective), [x >= 0, x <= 5])
         result = prob.solve(solver=nvx.BASINHOPPING, solver_options={"niter": 10})
@@ -167,10 +167,12 @@ class TestBasinhopping:
     def test_himmelblau(self):
         """Himmelblau's function has 4 global minima."""
         x = nvx.Variable((2,), name="x")
-        objective = (x[0]**2 + x[1] - 11)**2 + (x[0] + x[1]**2 - 7)**2
+        objective = (x[0] ** 2 + x[1] - 11) ** 2 + (x[0] + x[1] ** 2 - 7) ** 2
 
         prob = nvx.Problem(nvx.Minimize(objective), [x >= -5, x <= 5])
-        result = prob.solve(solver=nvx.BASINHOPPING, solver_options={"niter": 20, "seed": 0})
+        result = prob.solve(
+            solver=nvx.BASINHOPPING, solver_options={"niter": 20, "seed": 0}
+        )
 
         assert result.status == SolverStatus.OPTIMAL
         assert np.isclose(objective.value, 0.0, atol=1e-4)
@@ -205,7 +207,7 @@ class TestGlobalSolverEdgeCases:
     def test_simple_bounds_only(self):
         """Solvers that don't support constraints work with simple bounds."""
         x = nvx.Variable((2,), name="x")
-        objective = nvx.sum((x - 1)**2)
+        objective = nvx.sum((x - 1) ** 2)
 
         # Only simple bounds, no nonlinear constraints
         constraints = [x >= -5, x <= 5]
@@ -240,8 +242,8 @@ class TestGlobalSolverEdgeCases:
         x = nvx.Variable((2,), name="x")
         objective = nvx.sum(x**2 - 2 * x + 1)
 
-        prob = nvx.Problem(nvx.Minimize(objective), [x >= -5, x <= 5])
-        result = prob.solve(solver=nvx.DIFF_EVOLUTION, compile=True, solver_options={"seed": 0})
+        prob = nvx.Problem(nvx.Minimize(objective), [x >= -5, x <= 5], compile=True)
+        result = prob.solve(solver=nvx.DIFF_EVOLUTION, solver_options={"seed": 0})
 
         assert result.status == SolverStatus.OPTIMAL
         assert np.allclose(x.value, [1, 1], atol=1e-4)

@@ -6,11 +6,15 @@ mixed-integer nonlinear programming (MINLP).
 
 Modules:
 - backend: Main BranchAndBoundBackend solver class
-- node: Node, statistics, and variable info dataclasses
+- node: Node, statistics, and pseudocost dataclasses
 - branching: Variable branching strategies
 - heuristics: Primal heuristics for finding feasible solutions
 - cuts: Outer approximation cut generation and management
 - utils: Shared utility functions
+
+Note: Discrete set constraints (x ^ [values]) are now reformulated to
+binary indicator variables during Problem construction, so the B&B solver
+only handles standard integer branching.
 """
 
 from .backend import BranchAndBoundBackend
@@ -18,7 +22,6 @@ from .node import (
     BBNode,
     BBStats,
     BranchingStrategy,
-    DiscreteVarInfo,
     NodeSelection,
     PseudocostData,
 )
@@ -29,11 +32,9 @@ __all__ = [
     "BBNode",
     "BBStats",
     "BranchingStrategy",
-    "DiscreteVarInfo",
     "NodeSelection",
     "PseudocostData",
     "OACut",
     "generate_oa_cuts",
     "prune_cut_pool",
 ]
-
