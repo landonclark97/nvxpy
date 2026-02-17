@@ -63,7 +63,7 @@ from ...constants import (
 
 logger = logging.getLogger(__name__)
 
-from ..base import ProblemData, SolverResult, SolverStats, SolverStatus
+from ..base import ProblemData, SolverResult, SolverStats, SolverStatus, extract_simple_bounds
 from ..scipy_backend import ScipyBackend
 
 from .node import (
@@ -79,7 +79,6 @@ from .heuristics import rounding_heuristic, run_initial_heuristics
 from .utils import (
     build_scipy_constraints,
     create_child_nodes,
-    extract_simple_bounds,
     get_initial_bounds,
     get_integer_indices,
     get_integer_violations,

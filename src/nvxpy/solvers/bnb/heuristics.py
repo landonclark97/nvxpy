@@ -20,9 +20,10 @@ from typing import Callable, Dict, List, Set, Tuple
 
 import autograd.numpy as np
 from autograd import grad
-from scipy.optimize import minimize
+from scipy.optimize import minimize, milp, LinearConstraint, Bounds
 
-from ..base import ProblemData
+from ..base import ProblemData, extract_simple_bounds
+from ..scipy_backend import ScipyBackend
 from .cuts import OACut, generate_oa_cuts
 from ...constants import DEFAULT_NLP_FTOL, DEFAULT_INT_TOL
 
@@ -239,19 +240,12 @@ def feasibility_pump(
     Returns:
         Tuple of (solution, objective) or (None, inf) if no solution found
     """
-    from ..scipy_backend import ScipyBackend
-
     # Early exit if disabled
     if max_iterations <= 0:
         return None, float("inf")
 
-    from scipy.optimize import milp, LinearConstraint, Bounds
-
     n_vars = len(problem_data.x0)
     x = problem_data.x0.copy()
-
-    # Extract simple bounds for MILP
-    from .utils import extract_simple_bounds
 
     simple_bounds = extract_simple_bounds(problem_data)
     lb = np.full(n_vars, -1e8)
