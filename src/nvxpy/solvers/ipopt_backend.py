@@ -17,6 +17,7 @@ from .base import (
     uses_projection,
     downgrade_for_projection,
     wrap_projection_constraint,
+    extract_simple_bounds,
     ConstraintFn,
     ProblemData,
     SolverResult,
@@ -105,13 +106,36 @@ class IpoptBackend:
             else np.array([])
         )
 
-        # Variable bounds (default: unbounded)
-        lb = solver_options.get("lb", np.full(n, -1e20))
-        ub = solver_options.get("ub", np.full(n, 1e20))
+        # Variable bounds (default: unbounded), using simple bound constraints
+        # when explicit lb/ub arrays are not provided.
+        lb = solver_options.get("lb", None)
+        ub = solver_options.get("ub", None)
+
+        if lb is None or ub is None:
+            simple_bounds = extract_simple_bounds(problem_data)
+            if lb is None:
+                lb = np.full(n, -1e20)
+                for idx, (lo, _) in simple_bounds.items():
+                    if lo > float("-inf"):
+                        lb[idx] = lo
+            if ub is None:
+                ub = np.full(n, 1e20)
+                for idx, (_, hi) in simple_bounds.items():
+                    if hi < float("inf"):
+                        ub[idx] = hi
+
         if isinstance(lb, (int, float)):
             lb = np.full(n, lb)
+        else:
+            lb = np.asarray(lb, dtype=float)
         if isinstance(ub, (int, float)):
             ub = np.full(n, ub)
+        else:
+            ub = np.asarray(ub, dtype=float)
+        if len(lb) != n:
+            raise ValueError(f"lb must have length {n}, got {len(lb)}")
+        if len(ub) != n:
+            raise ValueError(f"ub must have length {n}, got {len(ub)}")
 
         # Create the problem
         nlp = cyipopt.Problem(

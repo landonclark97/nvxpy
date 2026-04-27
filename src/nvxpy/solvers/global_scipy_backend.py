@@ -30,6 +30,7 @@ from .base import (
     downgrade_for_projection,
     wrap_projection_constraint,
     extract_simple_bounds,
+    is_simple_bound_constraint,
     ConstraintFn,
     ProblemData,
     SolverResult,
@@ -109,22 +110,11 @@ def _resolve_bounds(
 
 def _has_nonbound_constraints(problem_data: ProblemData) -> bool:
     """Check if problem has constraints beyond simple variable bounds."""
-    from ..variable import Variable
-
     if problem_data.constraints is None:
         return bool(problem_data.constraint_fns)
 
     for constraint in problem_data.constraints:
-        if constraint.op not in (">=", "<="):
-            return True
-
-        left = constraint.left
-        right = constraint.right
-
-        is_simple = (
-            isinstance(left, Variable) and isinstance(right, (int, float))
-        ) or (isinstance(right, Variable) and isinstance(left, (int, float)))
-        if not is_simple:
+        if not is_simple_bound_constraint(constraint, problem_data):
             return True
 
     return False

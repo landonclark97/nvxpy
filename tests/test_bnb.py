@@ -40,6 +40,23 @@ def test_bnb_multiple_integers():
     assert np.isclose(y.value, 2.0, atol=0.1) or np.isclose(y.value, 3.0, atol=0.1)
 
 
+def test_bnb_with_array_bounds():
+    """Test B&B extracts elementwise NumPy array bounds."""
+    nvx.reset_variable_ids()
+    x = Variable(shape=(2,), integer=True, name="x")
+    x.value = np.array([0.0, 0.0])
+
+    objective = Minimize((x[0] - 3) ** 2 + (x[1] + 3) ** 2)
+
+    lower = np.array([-1.0, -2.0])
+    upper = np.array([1.0, 2.0])
+    problem = Problem(objective, [x >= lower, x <= upper])
+    result = problem.solve(solver=nvx.BNB)
+
+    assert result.status == nvx.SolverStatus.OPTIMAL
+    assert np.allclose(x.value, np.array([1.0, -2.0]), atol=0.1)
+
+
 def test_bnb_depth_first():
     """Test B&B with depth-first node selection."""
     nvx.reset_variable_ids()

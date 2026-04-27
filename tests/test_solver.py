@@ -585,6 +585,34 @@ class TestGradientBasedSolvers:
         assert result.status == nvx.SolverStatus.OPTIMAL
         assert np.allclose(x.value, np.array([1.0, 2.0]), atol=1e-3)
 
+    def test_lbfgsb_solver_with_simple_bounds(self):
+        """Test L-BFGS-B uses simple bound constraints as solver bounds."""
+        x = Variable(shape=(1,), name="x")
+        x.value = np.array([0.0])
+
+        objective = Minimize((x - 3) ** 2)
+
+        problem = Problem(objective, [x >= -1, x <= 1])
+        result = problem.solve(solver=nvx.LBFGSB)
+
+        assert result.status == nvx.SolverStatus.OPTIMAL
+        assert np.allclose(x.value, np.array([1.0]), atol=1e-4)
+
+    def test_lbfgsb_solver_with_array_bounds(self):
+        """Test L-BFGS-B extracts elementwise array bounds."""
+        x = Variable(shape=(2,), name="x")
+        x.value = np.array([0.0, 0.0])
+
+        objective = Minimize((x[0] - 3) ** 2 + (x[1] + 3) ** 2)
+
+        lower = np.array([-1.0, -2.0])
+        upper = np.array([1.0, 2.0])
+        problem = Problem(objective, [x >= lower, x <= upper])
+        result = problem.solve(solver=nvx.LBFGSB)
+
+        assert result.status == nvx.SolverStatus.OPTIMAL
+        assert np.allclose(x.value, np.array([1.0, -2.0]), atol=1e-4)
+
 
 class TestHessianBasedSolvers:
     """Tests for Hessian-based scipy solvers."""

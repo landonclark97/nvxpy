@@ -222,6 +222,20 @@ class TestGlobalSolverEdgeCases:
         result = prob.solve(solver=nvx.BASINHOPPING, solver_options={"niter": 10})
         assert result.status == SolverStatus.OPTIMAL
 
+    def test_array_bounds_only(self):
+        """Finite-bound global solvers extract elementwise array bounds."""
+        x = nvx.Variable((2,), name="x")
+        objective = nvx.sum((x - np.array([3.0, -3.0])) ** 2)
+
+        lower = np.array([-1.0, -2.0])
+        upper = np.array([1.0, 2.0])
+        prob = nvx.Problem(nvx.Minimize(objective), [x >= lower, x <= upper])
+
+        result = prob.solve(solver=nvx.DUAL_ANNEALING, solver_options={"seed": 0})
+
+        assert result.status == SolverStatus.OPTIMAL
+        assert np.allclose(x.value, [1.0, -2.0], atol=1e-4)
+
     def test_solver_options_passed(self):
         """Verify solver options are passed through."""
         x = nvx.Variable((2,), name="x")

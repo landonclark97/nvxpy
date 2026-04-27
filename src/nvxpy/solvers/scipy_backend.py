@@ -12,6 +12,8 @@ from .base import (
     uses_projection,
     downgrade_for_projection,
     wrap_projection_constraint,
+    extract_simple_bounds,
+    is_simple_bound_constraint,
     SCIPY_STATUS_MAP,
     ProblemData,
     SolverResult,
@@ -71,6 +73,17 @@ class ScipyBackend:
         "trust-constr",
     }
 
+    BOUND_METHODS = {
+        "Nelder-Mead",
+        "Powell",
+        "L-BFGS-B",
+        "TNC",
+        "SLSQP",
+        "COBYLA",
+        "COBYQA",
+        "trust-constr",
+    }
+
     def solve(
         self,
         problem_data: ProblemData,
@@ -95,11 +108,27 @@ class ScipyBackend:
         uses_hessian = method in self.HESSIAN_METHODS
         hess_func = hessian(obj_func) if uses_hessian else None
 
+        options = dict(solver_options)
+        explicit_bounds = options.pop("bounds", None)
+        bounds = self._resolve_bounds(problem_data, explicit_bounds)
+        has_bounds = any(lb is not None or ub is not None for lb, ub in bounds)
+        uses_bounds = method in self.BOUND_METHODS and has_bounds
+
+        simple_bound_constraint_indices = set()
+        if uses_bounds and problem_data.constraints is not None:
+            simple_bound_constraint_indices = {
+                i
+                for i, constraint in enumerate(problem_data.constraints)
+                if is_simple_bound_constraint(constraint, problem_data)
+            }
+
         # Build scipy constraint dicts from ConstraintFn objects
         # For projection constraints (<-), apply p_tol so the constraint becomes
         # p_tol - ||x - proj(x)|| >= 0, i.e., ||x - proj(x)|| <= p_tol
         cons = []
-        for c in problem_data.constraint_fns:
+        for i, c in enumerate(problem_data.constraint_fns):
+            if i in simple_bound_constraint_indices:
+                continue
             if c.op == "<-":
                 # Wrap projection constraint to apply tolerance
                 wrapped_fun = wrap_projection_constraint(
@@ -141,9 +170,11 @@ class ScipyBackend:
             start_time = time.time()
             presolve_kwargs = {
                 "method": method,
-                "options": solver_options,
+                "options": dict(options),
                 "constraints": cons,
             }
+            if uses_bounds:
+                presolve_kwargs["bounds"] = bounds
             if uses_gradient:
                 presolve_kwargs["jac"] = dummy_jac
             presolve_result = minimize(dummy_func, x0, **presolve_kwargs)
@@ -151,8 +182,6 @@ class ScipyBackend:
             solve_time += time.time() - start_time
 
         start_time = time.time()
-        options = dict(solver_options)
-
         if method == "dogleg":
             options.setdefault("initial_trust_radius", 0.1)
             options.setdefault("max_trust_radius", 1.0)
@@ -161,6 +190,8 @@ class ScipyBackend:
             "method": method,
             "options": options,
         }
+        if uses_bounds:
+            minimize_kwargs["bounds"] = bounds
         if uses_gradient:
             minimize_kwargs["jac"] = gradient
         if uses_hessian:
@@ -195,6 +226,8 @@ class ScipyBackend:
                     "options": proj_options,
                     "constraints": proj_cons,
                 }
+                if uses_bounds:
+                    proj_kwargs["bounds"] = bounds
                 if uses_gradient:
                     proj_kwargs["jac"] = dummy_jac
                 projection_result = minimize(dummy_func, x_sol, **proj_kwargs)
@@ -241,3 +274,27 @@ class ScipyBackend:
             return SolverStatus.UNKNOWN
 
         return SCIPY_STATUS_MAP.get(status_code, SolverStatus.ERROR)
+
+    @staticmethod
+    def _resolve_bounds(problem_data: ProblemData, bounds_opt) -> list:
+        n_vars = len(problem_data.x0)
+
+        if bounds_opt is not None:
+            bounds = list(bounds_opt)
+            if len(bounds) != n_vars:
+                raise ValueError(
+                    f"bounds must have length {n_vars}, got {len(bounds)}"
+                )
+            return bounds
+
+        simple_bounds = extract_simple_bounds(problem_data)
+        bounds = []
+        for i in range(n_vars):
+            lb, ub = simple_bounds.get(i, (float("-inf"), float("inf")))
+            bounds.append(
+                (
+                    None if lb == float("-inf") else lb,
+                    None if ub == float("inf") else ub,
+                )
+            )
+        return bounds

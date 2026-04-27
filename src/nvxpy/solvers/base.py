@@ -249,7 +249,7 @@ def extract_simple_bounds(problem_data: ProblemData) -> Dict[int, Tuple[float, f
         return {}
 
     for constraint in problem_data.constraints:
-        if constraint.op not in (">=", "<=", "=="):
+        if constraint.op not in (">=", "<="):
             continue
 
         # Check if this is a simple bound: var op constant or constant op var
@@ -257,16 +257,22 @@ def extract_simple_bounds(problem_data: ProblemData) -> Dict[int, Tuple[float, f
         right = constraint.right
 
         var = None
-        const = None
+        const_values = None
         is_var_on_left = False
 
-        if isinstance(left, Variable) and isinstance(right, (int, float)):
+        if isinstance(left, Variable):
+            values = _as_bound_values(right, left.shape)
+            if values is None:
+                continue
             var = left
-            const = float(right)
+            const_values = values
             is_var_on_left = True
-        elif isinstance(right, Variable) and isinstance(left, (int, float)):
+        elif isinstance(right, Variable):
+            values = _as_bound_values(left, right.shape)
+            if values is None:
+                continue
             var = right
-            const = float(left)
+            const_values = values
             is_var_on_left = False
         else:
             continue
@@ -277,7 +283,8 @@ def extract_simple_bounds(problem_data: ProblemData) -> Dict[int, Tuple[float, f
         start, end = problem_data.var_slices[var.name]
 
         # Determine bound type based on operator and which side var is on
-        for idx in range(start, end):
+        for offset, idx in enumerate(range(start, end)):
+            const = const_values[offset]
             current_lb, current_ub = var_bounds[idx]
 
             if constraint.op == ">=":
@@ -294,11 +301,6 @@ def extract_simple_bounds(problem_data: ProblemData) -> Dict[int, Tuple[float, f
                 else:
                     # const <= var -> lower bound
                     current_lb = max(current_lb, const)
-            elif constraint.op == "==":
-                # var == const -> fixed
-                current_lb = max(current_lb, const)
-                current_ub = min(current_ub, const)
-
             var_bounds[idx] = (current_lb, current_ub)
 
     # Remove entries with no actual bounds (both inf)
@@ -307,6 +309,51 @@ def extract_simple_bounds(problem_data: ProblemData) -> Dict[int, Tuple[float, f
         for idx, bounds in var_bounds.items()
         if bounds[0] > float("-inf") or bounds[1] < float("inf")
     }
+
+
+def _as_bound_values(value: Any, shape: Tuple[int, ...]) -> List[float] | None:
+    """Return flattened numeric bound values broadcast to a variable shape."""
+    try:
+        arr = anp.asarray(value, dtype=float)
+    except (TypeError, ValueError):
+        return None
+
+    if arr.ndim == 0:
+        arr = anp.full(shape, float(arr))
+    else:
+        try:
+            arr = anp.broadcast_to(arr, shape)
+        except ValueError:
+            return None
+
+    return [float(v) for v in anp.ravel(arr)]
+
+
+def is_simple_bound_constraint(constraint: Any, problem_data: ProblemData) -> bool:
+    """Return whether a constraint is represented by extract_simple_bounds().
+
+    This intentionally mirrors extract_simple_bounds(): whole-variable bounds
+    of the form ``var >= c``, ``var <= c``, ``c <= var``, and ``c >= var``.
+    """
+    from ..variable import Variable
+
+    if constraint.op not in (">=", "<="):
+        return False
+
+    left = constraint.left
+    right = constraint.right
+
+    if isinstance(left, Variable):
+        return (
+            left.name in problem_data.var_slices
+            and _as_bound_values(right, left.shape) is not None
+        )
+    if isinstance(right, Variable):
+        return (
+            right.name in problem_data.var_slices
+            and _as_bound_values(left, right.shape) is not None
+        )
+    return False
 
 
 def remove_redundant_equality_constraints(
